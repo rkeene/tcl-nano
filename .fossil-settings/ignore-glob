@@ -1,0 +1,14 @@
+nano.so
+Makefile
+pkgIndex.tcl
+aclocal.m4
+config.guess
+config.sub
+configure
+install-sh
+config.log
+config.status
+blake2b/blake2b.o
+tweetnacl/tweetnacl.c
+tweetnacl/tweetnacl.h
+tweetnacl/tweetnacl.o
