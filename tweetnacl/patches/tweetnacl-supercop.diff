@@ -1,14 +1,43 @@
 --- a/tweetnacl.c.new
 +++ b/tweetnacl.c.new
-@@ -516,6 +516,7 @@
-   0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL, 0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL
- };
+@@ -32,12 +32,14 @@
+   return (u<<8)|x[0];
+ }
  
 +#ifndef SUPERCOP
- int crypto_hashblocks(u8 *x,const u8 *m,u64 n)
+ static u64 dl64(const u8 *x)
  {
-   u64 z[8],b[8],a[8],w[16],t;
-@@ -584,6 +585,7 @@
+   u64 i,u=0;
+   FOR(i,8) u=(u<<8)|x[i];
+   return u;
+ }
++#endif
+ 
+ sv st32(u8 *x,u32 u)
+ {
+@@ -45,11 +47,13 @@
+   FOR(i,4) { x[i] = u; u >>= 8; }
+ }
+ 
++#ifndef SUPERCOP
+ sv ts64(u8 *x,u64 u)
+ {
+   int i;
+   for (i = 7;i >= 0;--i) { x[i] = u; u >>= 8; }
+ }
++#endif
+ 
+ static int vn(const u8 *x,const u8 *y,int n)
+ {
+@@ -484,6 +488,7 @@
+   return crypto_box_open_afternm(m,c,d,n,k);
+ }
+ 
++#ifndef SUPERCOP
+ static u64 R(u64 x,int c) { return (x >> c) | (x << (64 - c)); }
+ static u64 Ch(u64 x,u64 y,u64 z) { return (x & y) ^ (~x & z); }
+ static u64 Maj(u64 x,u64 y,u64 z) { return (x & y) ^ (x & z) ^ (y & z); }
+@@ -584,6 +589,7 @@
  
    return 0;
  }
