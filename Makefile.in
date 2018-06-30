@@ -1,11 +1,23 @@
-CFLAGS = -Wall
-LIBS = -ltcl8.6
-export CFLAGS
+CC            := @CC@
+CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
+CPPFLAGS      := @CPPFLAGS@ @SHOBJCPPFLAGS@
+LDFLAGS       := @LDFLAGS@
+LIBS          := @LIBS@
+SHOBJLDFLAGS  := @SHOBJLDFLAGS@
+export CC CFLAGS CPPFLAGS
 
-all: nano.so
+all: @EXTENSION_TARGET@
 
-nano.so: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.c Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -o nano.so nano.c tweetnacl/tweetnacl.o blake2b/blake2b.o $(LDFLAGS) $(LIBS)
+ifeq (@TCLEXT_BUILD@,shared)
+@EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)
+else
+@EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)
+endif
+
+nano.o: nano.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c nano.c
 
 tweetnacl/tweetnacl.o:
 	$(MAKE) -C tweetnacl tweetnacl.o
@@ -14,13 +26,17 @@ blake2b/blake2b.o:
 	$(MAKE) -C blake2b blake2b.o
 
 clean:
-	rm -f nano.so
+	rm -f @EXTENSION_TARGET@ nano.o
 	$(MAKE) -C tweetnacl clean
 	$(MAKE) -C blake2b clean
 
 distclean:
-	rm -f nano.so
+	rm -f @EXTENSION_TARGET@ nano.o
+	rm -f Makefile pkgIndex.tcl config.log config.status
 	$(MAKE) -C tweetnacl distclean
 	$(MAKE) -C blake2b distclean
 
-.PHONY: all clean distclean
+mrproper: distclean
+	rm -f configure aclocal.m4 config.guess config.sub install-sh
+
+.PHONY: all clean distclean mrproper
