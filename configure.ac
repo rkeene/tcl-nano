@@ -38,7 +38,7 @@ AC_ARG_ENABLE([debug], AS_HELP_STRING([--enable-debug], [enable debugging parame
 	fi
 ])
 if test "$tcl_nano_debug" = 'true'; then
-	AC_DEFINE(TCLEXT_TCLTLS_DEBUG, [1], [Enable debugging build])
+	AC_DEFINE(TCLEXT_TCL_NANO_DEBUG, [1], [Enable debugging build])
 	AX_CHECK_COMPILE_FLAG([-fcheck-pointer-bounds], [CFLAGS="$CFLAGS -fcheck-pointer-bounds"])
 else
 	dnl If we are not doing debugging disable some of the more annoying warnings
@@ -46,11 +46,12 @@ else
 	AX_CHECK_COMPILE_FLAG([-Wno-unused-parameter], [CFLAGS="$CFLAGS -Wno-unused-parameter"])
 	AX_CHECK_COMPILE_FLAG([-Wno-deprecated-declarations], [CFLAGS="$CFLAGS -Wno-deprecated-declarations"])
 fi
+AX_CHECK_COMPILE_FLAG([-Wno-sign-compare], [CFLAGS="$CFLAGS -Wno-sign-compare"])
 
 dnl Enable compiler warnings
-AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="$CFLAGS -Wall"])
+AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="-Wall $CFLAGS"])
 AX_CHECK_COMPILE_FLAG([-W], [
-	CFLAGS="$CFLAGS -W"
+	CFLAGS="-W $CFLAGS"
 	AX_CHECK_COMPILE_FLAG([-Wno-self-assign], [CFLAGS="$CFLAGS -Wno-self-assign"])
 ])
 
