@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 #include "tweetnacl.h"
+#include "blake2-supercop.h"
 
 #if 0
 #include <sys/random.h>
@@ -241,6 +242,27 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	clientData = clientData;
 }
 
+static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	unsigned char *data, result[crypto_sign_BYTES];
+	int data_length, result_length;
+
+	if (objc != 2) {
+		Tcl_WrongNumArgs(interp, 1, objv, "data");
+
+		return(TCL_ERROR);
+	}
+
+	data = Tcl_GetByteArrayFromObj(objv[1], &data_length);
+	crypto_hash(result, data, data_length);
+	result_length = sizeof(result);
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, result_length));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
 int Nano_Init(Tcl_Interp *interp) {
 #ifdef USE_TCL_STUBS
 	const char *tclInitStubs_ret;
@@ -255,6 +277,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
+	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
 
 	return(TCL_OK);
 }

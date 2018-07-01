@@ -4,7 +4,7 @@ lappend auto_path [file join [file dirname [info script]] .. ..]
 
 package require nano
 
-proc test1 {} {
+proc test_signatures {} {
 	# Detached signature
 	set data [binary decode hex 0000000000000000000000000000000000000000000000000000000000000000]
 	set key  [binary decode hex C4D214F19E706E9C7487CEF00DE8059200C32414F0ED82E5E33B523AEDF719BA]
@@ -50,6 +50,35 @@ proc test1 {} {
 		puts "\[FAIL\] Exp: false"
 		return false
 	}
+
+	return true
 }
 
-test1
+proc test_hashing {} {
+	# Basic test
+	set data [binary decode hex 4451686437A2BF5C4759100DE2ADE0F39B6877275AF997906B71B1A8EF1550A2]
+	set hash [binary encode hex [::nano::internal::hashData $data]]
+	set hash_expected "84ac733547d71c312e707508646008a9d8f84f7093e60ca91e4eb376365ac1921fdde6e8ccb3875ea12369d9f6fb02237f51f4c05f3555e57d11800deda7319f"
+	if {$hash ne $hash_expected} {
+		puts "\[FAIL\] Got: $hash"
+		puts "\[FAIL\] Exp: $hash_expected"
+
+		return false
+	}
+
+	return true
+}
+
+set tests {
+	signatures
+	hashing
+}
+
+foreach test $tests {
+	if {![test_$test]} {
+		puts "FAILED test $test"
+		exit 1
+	}
+}
+
+exit 0
