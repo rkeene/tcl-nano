@@ -25,6 +25,9 @@ tweetnacl/tweetnacl.o:
 blake2b/blake2b.o:
 	$(MAKE) -C blake2b blake2b.o
 
+test: @EXTENSION_TARGET@
+	cd build/test && ./test.tcl
+
 clean:
 	rm -f @EXTENSION_TARGET@ nano.o
 	$(MAKE) -C tweetnacl clean
@@ -39,4 +42,4 @@ distclean:
 mrproper: distclean
 	rm -f configure aclocal.m4 config.guess config.sub install-sh
 
-.PHONY: all clean distclean mrproper
+.PHONY: all test clean distclean mrproper
