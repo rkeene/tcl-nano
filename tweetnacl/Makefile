@@ -8,9 +8,10 @@ tweetnacl.c.new: src/tweetnacl.c
 	rm -f tweetnacl.c.new tweetnacl.c
 	cp src/tweetnacl.c tweetnacl.c.new
 
-tweetnacl.c: tweetnacl.c.new tweetnacl.h.new
+tweetnacl.c: tweetnacl.c.new tweetnacl.h.new patches/tweetnacl-supercop.diff patches/tweetnacl-derivepubkey.diff
 	rm -f tweetnacl.c tweetnacl.h
-	patch -p1 < patches/tweetnacl-supercop.diff
+	patch -p1 < patches/tweetnacl-supercop.diff || ( rm -f tweetnacl.c.new tweetnacl.h.new; exit 1 )
+	patch -p1 < patches/tweetnacl-derivepubkey.diff || ( rm -f tweetnacl.c.new tweetnacl.h.new; exit 1 )
 	mv tweetnacl.h.new tweetnacl.h
 	mv tweetnacl.c.new tweetnacl.c
 
