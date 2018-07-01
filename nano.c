@@ -190,6 +190,7 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	unsigned char *signature, *data, *signed_data, *public_key;
 	int signature_length, data_length, signed_data_length, public_key_length;
 	unsigned long long data_length_nacl;
+	int result;
 
 	if (objc != 4) {
 		Tcl_WrongNumArgs(interp, 1, objv, "data signature publicKey");
@@ -225,17 +226,14 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 
 	data_length_nacl = data_length;
 	cso_ret = crypto_sign_open(data, &data_length_nacl, signed_data, signed_data_length, public_key);
-	if (cso_ret != 0) {
-		Tcl_Free((char *) signed_data);
-
-		Tcl_SetResult(interp, "crypto_sign_open failed", NULL);
-
-		return(TCL_ERROR);
+	result = 0;
+	if (cso_ret == 0) {
+		result = 1;
 	}
 
 	Tcl_Free((char *) signed_data);
 
-	/* XXX:TODO: Validate */
+	Tcl_SetObjResult(interp, Tcl_NewBooleanObj(result));
 
 	return(TCL_OK);
 
