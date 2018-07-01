@@ -69,9 +69,15 @@ proc test_hashing {} {
 	return true
 }
 
+proc test_keygeneration {} {
+	set key [::nano::internal::generateKey]
+	puts "key=$key"
+}
+
 set tests {
 	signatures
 	hashing
+	keygeneration
 }
 
 foreach test $tests {

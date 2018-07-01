@@ -5,6 +5,9 @@
 #include "tweetnacl.h"
 #include "blake2-supercop.h"
 
+#define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
+#define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
+
 #if 0
 #include <sys/random.h>
 
@@ -62,9 +65,6 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 	return;
 }
 
-#define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
-#define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
-
 static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *out_key_length) {
 	unsigned char *secret_key, *public_key, *secret_key_only;
 	int secret_key_length, secret_key_only_length;
@@ -92,6 +92,30 @@ static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *o
 	return(secret_key);
 }
 
+static int nano_tcl_generate_keypair(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	int csk_ret;
+	unsigned char secret_key[crypto_sign_SECRETKEYBYTES], public_key[crypto_sign_PUBLICKEYBYTES];
+
+	if (objc != 1) {
+		Tcl_WrongNumArgs(interp, 1, objv, "");
+
+		return(TCL_ERROR);
+	}
+
+	csk_ret = crypto_sign_keypair(public_key, secret_key, 1);
+	if (csk_ret != 0) {
+		Tcl_SetResult(interp, "Internal error", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(secret_key, NANO_SECRET_KEY_LENGTH));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
 static int nano_tcl_secret_key_to_public_key(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *secret_key, *public_key;
 	int secret_key_length, public_key_length;
@@ -274,6 +298,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	}
 #endif
 
+	Tcl_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
