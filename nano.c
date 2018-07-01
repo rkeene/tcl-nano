@@ -1,6 +1,7 @@
 #include <tcl.h>
 #include <stdint.h>
 #include <limits.h>
+#include <string.h>
 #include "tweetnacl.h"
 
 #if 0
