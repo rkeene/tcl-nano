@@ -8,6 +8,7 @@ proc test_selftest {} {
 	::nano::internal::selfTest
 	return true
 }
+
 proc test_signatures {} {
 	# Detached signature
 	set data [binary decode hex 0000000000000000000000000000000000000000000000000000000000000000]
@@ -89,6 +90,31 @@ proc test_keygeneration {} {
 	if {!$verified} {
 		puts "\[2.FAIL\] Got: $verified"
 		puts "\[2.FAIL\] Exp: true"
+
+		return false
+	}
+
+	return true
+}
+
+proc test_addressformat {} {
+	set addr nano_35ynhw4qd1pam88azf86nk8ka5sthnzaubcw5fawingep1sjydwaiw8xy7t6
+	set pub  8fd47f057582c8998c8fb4c4a48d240f3a7d3e8da55c1b51c851ccb0331f2f88
+
+	set pubCheck [string tolower [::nano::address::toPublicKey $addr -hex -verify]]
+	if {$pubCheck ne $pub} {
+		puts "\[1.FAIL\] Got: $pubCheck"
+		puts "\[1.FAIL\] Exp: $pub"
+
+		return false
+	}
+
+	set addrCheck [::nano::address::fromPublicKey $pub]
+	if {$addrCheck ne $addr} {
+		puts "\[1.FAIL\] Got: $addrCheck"
+		puts "\[1.FAIL\] Exp: $addr"
+
+		return false
 	}
 
 	return true
@@ -99,6 +125,7 @@ set tests {
 	signatures
 	hashing
 	keygeneration
+	addressformat
 }
 
 foreach test $tests {
