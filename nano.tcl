@@ -373,7 +373,7 @@ proc ::nano::block::_dictToJSON {blockDict} {
 
 	set blockJSONFields {
 		type account source destination previous representative balance
-		link link_as_account _blockHash _workHash signature
+		link link_as_account _blockHash _workHash signature _comment
 	}
 
 	set blockJSONEntries [lmap field $blockJSONFields {
@@ -558,6 +558,7 @@ proc ::nano::block::create::send {args} {
 		"balance" $block(balance) \
 		"link_as_account" $block(to) \
 		"_workHash" $block(previous) \
+		"_comment" "Send $block(amount) raw from $block(from) to $block(to)" \
 	]
 
 	if {[info exists block(signKey)]} {
@@ -595,6 +596,7 @@ proc ::nano::block::create::receive {args} {
 		"balance" $block(balance) \
 		"link" $block(sourceBlock) \
 		"_workHash" $block(_workHash) \
+		"_comment" "Receive $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
 	]
 
 	if {[info exists block(signKey)]} {
