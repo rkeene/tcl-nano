@@ -1,4 +1,6 @@
 CC            := @CC@
+AR            := @AR@
+RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
 CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
 LDFLAGS       := @LDFLAGS@
@@ -7,17 +9,21 @@ SHOBJLDFLAGS  := @SHOBJLDFLAGS@
 srcdir        := @srcdir@
 export CC CFLAGS CPPFLAGS
 
-all: @EXTENSION_TARGET@
+all: @EXTENSION_TARGET@ pkgIndex.tcl
 
-ifeq (@TCLEXT_BUILD@,shared)
 @EXTENSION_TARGET@: tweetnacl.o blake2b.o nano.o Makefile
+ifeq (@TCLEXT_BUILD@,shared)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl.o blake2b.o $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
-@EXTENSION_TARGET@: tweetnacl.o blake2b.o nano.o Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl.o blake2b.o $(LIBS)
+	rm -f @EXTENSION_TARGET@
+	$(AR) rc @EXTENSION_TARGET@ nano.o blake2b.o tweetnacl.o
+	-$(RANLIB) @EXTENSION_TARGET@
 endif
+
+pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
+	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
 
 nano.o: @srcdir@/nano.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
@@ -42,8 +48,10 @@ clean:
 	rm -f blake2b.o tweetnacl.o
 
 distclean: clean
-	rm -f Makefile pkgIndex.tcl config.log config.status nano.syms
-	rm -f nano.tcl.h
+	rm -f Makefile pkgIndex.tcl-shared pkgIndex.tcl-static nano.syms
+	rm -f pkgIndex.tcl
+	rm -f config.log config.status
+	rm -f nano.tcl.h nano.tcl.h.new.1 nano.tcl.h.new.2
 
 mrproper: distclean
 	rm -f configure aclocal.m4 config.guess config.sub install-sh

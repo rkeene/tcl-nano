@@ -79,4 +79,4 @@ if test "$tcl_nano_debug" = 'true'; then
 fi
 
 dnl Produce output
-AC_OUTPUT(Makefile pkgIndex.tcl nano.syms)
+AC_OUTPUT(Makefile pkgIndex.tcl-${TCLEXT_BUILD} nano.syms)

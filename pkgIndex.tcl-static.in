@@ -1,0 +1,1 @@
+package ifneeded nano @PACKAGE_VERSION@ [list load {} Nano]
