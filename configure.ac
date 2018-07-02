@@ -71,6 +71,10 @@ fi
 
 dnl Setup a stable ABI
 DC_SETUP_STABLE_API(nano.vers, nano.syms)
+if test "$tcl_nano_debug" = 'true'; then
+	WEAKENSYMS=':'
+	REMOVESYMS=':'
+fi
 
 dnl Produce output
 AC_OUTPUT(Makefile pkgIndex.tcl nano.syms)
