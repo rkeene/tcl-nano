@@ -1,6 +1,6 @@
 #! /usr/bin/env tclsh
 
-lappend auto_path [file join [file dirname [info script]] .. ..]
+lappend auto_path [file normalize [lindex $argv 0]]
 
 package require nano
 

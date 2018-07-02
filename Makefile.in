@@ -41,7 +41,7 @@ blake2b.o: @srcdir@/blake2b/blake2b.c @srcdir@/blake2b/blake2.h @srcdir@/blake2b
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o blake2b.o -c @srcdir@/blake2b/blake2b.c
 
 test: @EXTENSION_TARGET@
-	@srcdir@/build/test/test.tcl
+	@srcdir@/build/test/test.tcl .
 
 clean:
 	rm -f @EXTENSION_TARGET@ nano.o
