@@ -1,15 +1,22 @@
-#include <tcl.h>
 #include <stdint.h>
 #include <limits.h>
 #include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <tcl.h>
+
 #include "tweetnacl.h"
 #include "blake2-supercop.h"
 
 #define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
+#define TclNano_AttemptAlloc(x) ((void *) Tcl_Alloc(x))
+#define TclNano_Free(x) Tcl_Free((char *) x)
 
-#if 0
-#include <sys/random.h>
+#if defined(HAVE_GETRANDOM)
+#  ifdef HAVE_SYS_RANDOM_H
+#    include <sys/random.h>
+#  endif
 
 void randombytes(uint8_t *buffer, uint64_t length) {
 	ssize_t gr_ret;
@@ -26,10 +33,7 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 
 	return;
 }
-#endif
-
-#if 0
-#include <unistd.h>
+#elif defined(HAVE_GETENTROPY)
 void randombytes(uint8_t *buffer, uint64_t length) {
 	int ge_ret;
 	int current_length;
@@ -51,19 +55,38 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 
 	return;
 }
-#endif
-
-/*
- * XXX:TODO: NOT RANDOM: For testing only
- */
+#else
+#  ifdef HAVE_SYS_TYPES_H
+#    include <sys/types.h>
+#  endif
+#  ifdef HAVE_SYS_STAT_H
+#    include <sys/stat.h>
+#  endif
+#  ifdef HAVE_FCNTL_H
+#    include <fcntl.h>
+# endif
 void randombytes(uint8_t *buffer, uint64_t length) {
-	while (length > 0) {
-		buffer[length - 1] = (length % 256);
-		length--;
+	ssize_t read_ret;
+	int fd = -1;
+
+	while (fd < 0) {
+		fd = open("/dev/urandom", O_RDONLY);
 	}
 
+	while (length > 0) {
+		read_ret = read(fd, buffer, length);
+		if (read_ret <= 0) {
+			continue;
+		}
+
+		buffer += read_ret;
+		length -= read_ret;
+	}
+
+	close(fd);
 	return;
 }
+#endif
 
 static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *out_key_length) {
 	unsigned char *secret_key, *public_key, *secret_key_only;
@@ -79,7 +102,7 @@ static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *o
 	}
 
 	secret_key_length = crypto_sign_SECRETKEYBYTES;
-	secret_key = (unsigned char *) Tcl_AttemptAlloc(secret_key_length);
+	secret_key = TclNano_AttemptAlloc(secret_key_length);
 	if (!secret_key) {
 		return(NULL);
 	}
@@ -134,7 +157,7 @@ static int nano_tcl_secret_key_to_public_key(ClientData clientData, Tcl_Interp *
 	}
 
 	public_key_length = NANO_PUBLIC_KEY_LENGTH;
-	public_key = (unsigned char *) Tcl_AttemptAlloc(public_key_length);
+	public_key = TclNano_AttemptAlloc(public_key_length);
 	if (!public_key) {
 		Tcl_SetResult(interp, "Internal error", NULL);
 
@@ -145,7 +168,7 @@ static int nano_tcl_secret_key_to_public_key(ClientData clientData, Tcl_Interp *
 
 	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(public_key, public_key_length));
 
-	Tcl_Free((char *) public_key);
+	TclNano_Free(public_key);
 
 	return(TCL_OK);
 
@@ -174,15 +197,15 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 	}
 
 	secret_key = nano_parse_secret_key(objv[2], &secret_key_length);
-	if (secret_key == NULL) {
+	if (!secret_key) {
 		Tcl_SetResult(interp, "Secret key is not the right size", NULL);
 
 		return(TCL_ERROR);
 	}
 
-	signature = (unsigned char *) Tcl_AttemptAlloc(signature_length);
+	signature = TclNano_AttemptAlloc(signature_length);
 	if (!signature) {
-		Tcl_Free((char *) secret_key);
+		TclNano_Free(secret_key);
 
 		Tcl_SetResult(interp, "Unable to allocate memory", NULL);
 
@@ -191,8 +214,8 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 
 	cs_ret = crypto_sign(signature, &signature_length, data, data_length, secret_key);
 	if (cs_ret != 0) {
-		Tcl_Free((char *) secret_key);
-		Tcl_Free((char *) signature);
+		TclNano_Free(secret_key);
+		TclNano_Free(signature);
 
 		Tcl_SetResult(interp, "crypto_sign failed", NULL);
 
@@ -201,8 +224,8 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 
 	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(signature, crypto_sign_BYTES));
 
-	Tcl_Free((char *) signature);
-	Tcl_Free((char *) secret_key);
+	TclNano_Free(signature);
+	TclNano_Free(secret_key);
 
 	return(TCL_OK);
 
@@ -212,9 +235,9 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 
 static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	int cso_ret;
-	unsigned char *signature, *data, *signed_data, *public_key;
-	int signature_length, data_length, signed_data_length, public_key_length;
-	unsigned long long data_length_nacl;
+	unsigned char *signature, *data, *signed_data, *verify_data, *public_key;
+	int signature_length, data_length, signed_data_length, verify_data_length, public_key_length;
+	unsigned long long verify_data_length_nacl;
 	int result;
 
 	if (objc != 4) {
@@ -239,7 +262,7 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	}
 
 	signed_data_length = data_length + signature_length;
-	signed_data = (unsigned char *) Tcl_AttemptAlloc(signed_data_length);
+	signed_data = TclNano_AttemptAlloc(signed_data_length);
 	if (!signed_data) {
 		Tcl_SetResult(interp, "Internal error", NULL);
 
@@ -249,14 +272,26 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	memcpy(signed_data, signature, signature_length);
 	memcpy(signed_data + signature_length, data, data_length);
 
-	data_length_nacl = data_length;
-	cso_ret = crypto_sign_open(data, &data_length_nacl, signed_data, signed_data_length, public_key);
+	verify_data_length = signed_data_length;
+	verify_data = TclNano_AttemptAlloc(verify_data_length);
+	if (!verify_data) {
+		TclNano_Free(verify_data);
+
+		Tcl_SetResult(interp, "Internal error", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	verify_data_length_nacl = verify_data_length;
+printf("cso sdl = %i, dl=%i, sl=%i\n", signed_data_length, data_length, signature_length);
+	cso_ret = crypto_sign_open(verify_data, &verify_data_length_nacl, signed_data, signed_data_length, public_key);
 	result = 0;
 	if (cso_ret == 0) {
 		result = 1;
 	}
 
-	Tcl_Free((char *) signed_data);
+	TclNano_Free(signed_data);
+	TclNano_Free(verify_data);
 
 	Tcl_SetObjResult(interp, Tcl_NewBooleanObj(result));
 
@@ -278,7 +313,7 @@ static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int obj
 
 	data = Tcl_GetByteArrayFromObj(objv[1], &data_length);
 	crypto_hash(result, data, data_length);
-	result_length = sizeof(result);
+	result_length = crypto_sign_BYTES;
 	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, result_length));
 
 	return(TCL_OK);
@@ -287,7 +322,24 @@ static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int obj
 	clientData = clientData;
 }
 
+static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	if (objc != 1) {
+		Tcl_WrongNumArgs(interp, 1, objv, "");
+
+		return(TCL_ERROR);
+	}
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
 int Nano_Init(Tcl_Interp *interp) {
+	const char nanoInitScript[] = {
+#include "nano.tcl.h"
+		0x00
+	};
 #ifdef USE_TCL_STUBS
 	const char *tclInitStubs_ret;
 
@@ -298,11 +350,16 @@ int Nano_Init(Tcl_Interp *interp) {
 	}
 #endif
 
+	Tcl_CreateObjCommand(interp, "::nano::internal::selfTest", nano_tcl_self_test, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
+
+	if (interp) {
+		Tcl_Eval(interp, nanoInitScript);
+	}
 
 	return(TCL_OK);
 }
