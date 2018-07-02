@@ -136,8 +136,8 @@ proc test_addressformat {} {
 
 	set addrCheck [::nano::address::fromPublicKey $pub]
 	if {$addrCheck ne $addr} {
-		puts "\[1.FAIL\] Got: $addrCheck"
-		puts "\[1.FAIL\] Exp: $addr"
+		puts "\[2.FAIL\] Got: $addrCheck"
+		puts "\[2.FAIL\] Exp: $addr"
 
 		return false
 	}
@@ -150,13 +150,26 @@ proc test_blocks {} {
 	set key [::nano::key::computeKey $seed 0 -hex]
 	set address [::nano::address::fromPrivateKey $key -xrb]
 
+	# High-level primitives
+	## Receive/Open
 	set block [::nano::block::create::receive \
 		to $address \
 		amount 1000000000000000000000000000000 \
-		sourceBlock 207D3043D77B84E892AD4949D147386DE4C2FE4B2C8DC13F9469BC4A764681A7 \
+		sourceBlock "207D3043D77B84E892AD4949D147386DE4C2FE4B2C8DC13F9469BC4A764681A7" \
 		signKey $key
 	]
 
+	set blockDict [::json::json2dict $block]
+	set blockSignature [string toupper [dict get $blockDict signature]]
+	set blockSignature_expected "B574DE37F5FFF3DCFB5D0E505FC36B402444777CAA99BA86F89E9B82B6EB901B809554287F0B67D8C2A8306B4F69FE77FD0C9B3D0D10422A02CFEBB3810C7D02"
+	if {$blockSignature ne $blockSignature_expected} {
+		puts "\[1.FAIL\] Got: $blockSignature"
+		puts "\[1.FAIL\] Exp: $blockSignature_expected"
+
+		return false
+	}
+
+	## Send
 	set block [::nano::block::create::send \
 		from $address \
 		to "xrb_1unc5hriitrdjq5dnyhr3zmd8t5hm7rhm9a1u3uun5ycbaacpu649yh5c4b5" \
@@ -166,7 +179,31 @@ proc test_blocks {} {
 		signKey $key
 	]
 
-	set block [::nano::block::toDict [::nano::block::fromJSON $block]]
+	set blockDict [::json::json2dict $block]
+	set blockSignature [string toupper [dict get $blockDict signature]]
+	set blockSignature_expected "BFE238A27FFBFBCF722EDC3700CA8E2405F5AE18E353E591917A2CBE393F0759C948E710DD723B3BFB21B491D9D0856EEFCAC0E25C7E5FF06185FE5D633B5204"
+	if {$blockSignature ne $blockSignature_expected} {
+		puts "\[2.FAIL\] Got: $blockSignature"
+		puts "\[2.FAIL\] Exp: $blockSignature_expected"
+
+		return false
+	}
+
+	# JSON Parsing a block
+	set blockDict [::nano::block::toDict [::nano::block::fromJSON $block]]
+	dict unset blockDict _blockData
+	dict set blockDict signKey $key
+
+	set block     [::nano::block::jsonFromDict $blockDict]
+	set blockDict [::json::json2dict $block]
+	set blockSignature [string toupper [dict get $blockDict signature]]
+	if {$blockSignature ne $blockSignature_expected} {
+		puts "\[3.FAIL\] Got: $blockSignature"
+		puts "\[3.FAIL\] Exp: $blockSignature_expected"
+
+		return false
+	}
+
 
 	return true
 }

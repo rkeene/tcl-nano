@@ -259,6 +259,62 @@ proc ::nano::block::fromJSON {json} {
 	return $blockData
 }
 
+proc ::nano::block::signBlockHash {blockHash key args} {
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+		}
+	}
+
+	if {[string length $blockHash] != 32} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	if {[string length $key] != 32} {
+		set key [binary decode hex $key]
+	}
+
+	set signature [::nano::internal::signDetached $blockHash $key]
+
+	if {$outputFormat eq "hex"} {
+		set signature [string toupper [binary encode hex $signature]]
+	}
+
+	return $signature
+}
+
+proc ::nano::block::signBlock {blockData args} {
+	set blockHash [::nano::block::hash $blockData]
+
+	tailcall ::nano::block::signBlockHash $blockHash {*}$args
+}
+
+proc ::nano::block::verifyBlockHash {blockHash signature pubKey} {
+	if {[string length $blockHash] != 32} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	if {[string length $pubKey] != 32} {
+		set key [binary decode hex $pubKey]
+	}
+
+	set valid [::nano::internal::verifyDetached $blockHash $signature $pubKey]
+
+	return $signature
+}
+
+proc ::nano::block::verifyBlock {blockData args} {
+	set blockHash [::nano::block::hash $blockData]
+
+	tailcall ::nano::block::verifyBlockHash $blockHash {*}$args
+}
+
 proc ::nano::block::_dictToJSON {blockDict} {
 	array set block $blockDict
 
@@ -267,14 +323,7 @@ proc ::nano::block::_dictToJSON {blockDict} {
 			set block(_blockHash) [binary encode hex [::nano::block::hash $block(_blockData)]]
 		}
 
-		set signKey   [binary decode hex $block(signKey)]
-		set blockHash [binary decode hex $block(_blockHash)]
-
-		set signature [::nano::internal::signDetached $blockHash $signKey]
-		set signature [binary encode hex $signature]
-		set signature [string toupper $signature]
-
-		set block(signature) $signature
+		set block(signature) [::nano::block::signBlockHash $block(_blockHash) $block(signKey) -hex]
 	}
 
 	if {$block(type) eq "state"} {
