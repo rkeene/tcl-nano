@@ -4,7 +4,7 @@
    return (u<<8)|x[0];
  }
  
-+#ifndef SUPERCOP
++#ifndef NACL_ED25519_BLAKE2B
  static u64 dl64(const u8 *x)
  {
    u64 i,u=0;
@@ -19,7 +19,7 @@
    FOR(i,4) { x[i] = u; u >>= 8; }
  }
  
-+#ifndef SUPERCOP
++#ifndef NACL_ED25519_BLAKE2B
  sv ts64(u8 *x,u64 u)
  {
    int i;
@@ -33,7 +33,7 @@
    return crypto_box_open_afternm(m,c,d,n,k);
  }
  
-+#ifndef SUPERCOP
++#ifndef NACL_ED25519_BLAKE2B
  static u64 R(u64 x,int c) { return (x >> c) | (x << (64 - c)); }
  static u64 Ch(u64 x,u64 y,u64 z) { return (x & y) ^ (~x & z); }
  static u64 Maj(u64 x,u64 y,u64 z) { return (x & y) ^ (x & z) ^ (y & z); }
@@ -51,14 +51,14 @@
  #define crypto_hashblocks_sha256_BLOCKBYTES crypto_hashblocks_sha256_tweet_BLOCKBYTES
  #define crypto_hashblocks_sha256_VERSION crypto_hashblocks_sha256_tweet_VERSION
  #define crypto_hashblocks_sha256_IMPLEMENTATION "crypto_hashblocks/sha256/tweet"
-+#ifndef SUPERCOP
++#ifndef NACL_ED25519_BLAKE2B
  #define crypto_hash_PRIMITIVE "sha512"
  #define crypto_hash crypto_hash_sha512
  #define crypto_hash_BYTES crypto_hash_sha512_BYTES
  #define crypto_hash_IMPLEMENTATION crypto_hash_sha512_IMPLEMENTATION
  #define crypto_hash_VERSION crypto_hash_sha512_VERSION
 +#else
-+#include "blake2-supercop.h"
++#include "blake2-nacl.h"
 +#endif
  #define crypto_hash_sha512_tweet_BYTES 64
  extern int crypto_hash_sha512_tweet(unsigned char *,const unsigned char *,unsigned long long);

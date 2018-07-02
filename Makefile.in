@@ -1,6 +1,6 @@
 CC            := @CC@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DSUPERCOP=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
+CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
