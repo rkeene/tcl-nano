@@ -139,6 +139,7 @@ static int nano_tcl_generate_keypair(ClientData clientData, Tcl_Interp *interp, 
 	/* NOTREACH */
 	clientData = clientData;
 }
+
 static int nano_tcl_secret_key_to_public_key(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *secret_key, *public_key;
 	int secret_key_length, public_key_length;
