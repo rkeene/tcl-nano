@@ -1,5 +1,8 @@
 nano.so
 nano.o
+randombytes.o
+blake2b.o
+tweetnacl.o
 nano.syms
 nano.tcl.h
 Makefile

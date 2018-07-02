@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <tcl.h>
 
+#include "randombytes.h"
 #include "tweetnacl.h"
 #include "blake2.h"
 
@@ -12,81 +13,6 @@
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
 #define TclNano_AttemptAlloc(x) ((void *) Tcl_AttemptAlloc(x))
 #define TclNano_Free(x) Tcl_Free((char *) x)
-
-#if defined(HAVE_GETRANDOM)
-#  ifdef HAVE_SYS_RANDOM_H
-#    include <sys/random.h>
-#  endif
-
-void randombytes(uint8_t *buffer, uint64_t length) {
-	ssize_t gr_ret;
-
-	while (length > 0) {
-		gr_ret = getrandom(buffer, length, 0);
-		if (gr_ret <= 0) {
-			continue;
-		}
-
-		buffer += gr_ret;
-		length -= gr_ret;
-	}
-
-	return;
-}
-#elif defined(HAVE_GETENTROPY)
-void randombytes(uint8_t *buffer, uint64_t length) {
-	int ge_ret;
-	int current_length;
-
-	while (length > 0) {
-		current_length = length;
-		if (current_length > 256) {
-			current_length = 256;
-		}
-
-		ge_ret = getentropy(buffer, current_length);
-		if (ge_ret != 0) {
-			continue;
-		}
-
-		buffer += current_length;
-		length -= current_length;
-	}
-
-	return;
-}
-#else
-#  ifdef HAVE_SYS_TYPES_H
-#    include <sys/types.h>
-#  endif
-#  ifdef HAVE_SYS_STAT_H
-#    include <sys/stat.h>
-#  endif
-#  ifdef HAVE_FCNTL_H
-#    include <fcntl.h>
-# endif
-void randombytes(uint8_t *buffer, uint64_t length) {
-	ssize_t read_ret;
-	int fd = -1;
-
-	while (fd < 0) {
-		fd = open("/dev/urandom", O_RDONLY);
-	}
-
-	while (length > 0) {
-		read_ret = read(fd, buffer, length);
-		if (read_ret <= 0) {
-			continue;
-		}
-
-		buffer += read_ret;
-		length -= read_ret;
-	}
-
-	close(fd);
-	return;
-}
-#endif
 
 static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *out_key_length) {
 	unsigned char *secret_key, *public_key, *secret_key_only;

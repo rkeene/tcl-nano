@@ -11,22 +11,25 @@ export CC CFLAGS CPPFLAGS
 
 all: @EXTENSION_TARGET@ pkgIndex.tcl
 
-@EXTENSION_TARGET@: tweetnacl.o blake2b.o nano.o Makefile
+@EXTENSION_TARGET@: tweetnacl.o blake2b.o randombytes.o nano.o Makefile
 ifeq (@TCLEXT_BUILD@,shared)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl.o blake2b.o $(LIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o randombytes.o tweetnacl.o blake2b.o $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
 	rm -f @EXTENSION_TARGET@
-	$(AR) rc @EXTENSION_TARGET@ nano.o blake2b.o tweetnacl.o
+	$(AR) rc @EXTENSION_TARGET@ nano.o randombytes.o blake2b.o tweetnacl.o
 	-$(RANLIB) @EXTENSION_TARGET@
 endif
 
 pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
 	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
 
-nano.o: @srcdir@/nano.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h nano.tcl.h Makefile
+nano.o: @srcdir@/nano.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
+
+randombytes.o: @srcdir@/randombytes.c @srcdir@/randombytes.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o randombytes.o -c @srcdir@/randombytes.c
 
 nano.tcl.h: @srcdir@/nano.tcl Makefile
 	od -A n -v -t xC < '@srcdir@/nano.tcl' > nano.tcl.h.new.1
@@ -45,7 +48,7 @@ test: @EXTENSION_TARGET@
 
 clean:
 	rm -f @EXTENSION_TARGET@ nano.o
-	rm -f blake2b.o tweetnacl.o
+	rm -f blake2b.o tweetnacl.o randombytes.o
 
 distclean: clean
 	rm -f Makefile pkgIndex.tcl-shared pkgIndex.tcl-static nano.syms

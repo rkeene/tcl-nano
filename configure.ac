@@ -62,6 +62,13 @@ AX_CHECK_COMPILE_FLAG([-fstack-protector-all], [CFLAGS="$CFLAGS -fstack-protecto
 AX_CHECK_COMPILE_FLAG([-fno-strict-overflow], [CFLAGS="$CFLAGS -fno-strict-overflow"])
 AC_DEFINE([_FORTIFY_SOURCE], [2], [Enable fortification])
 
+dnl Random number generation mechanisms
+AC_CHECK_FUNC(getrandom,, [
+	AC_CHECK_FUNC(getentropy,, [
+		AC_CHECK_FUNC(CryptGenRandom)
+	])
+])
+
 dnl Sync the RPATH if requested
 if test "$TCLEXT_BUILD" != 'static'; then
 	if test "$TCLEXT_TLS_STATIC_SSL" = 'yes'; then
