@@ -10,7 +10,7 @@
 
 #define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
-#define TclNano_AttemptAlloc(x) ((void *) Tcl_Alloc(x))
+#define TclNano_AttemptAlloc(x) ((void *) Tcl_AttemptAlloc(x))
 #define TclNano_Free(x) Tcl_Free((char *) x)
 
 #if defined(HAVE_GETRANDOM)
@@ -283,7 +283,6 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	}
 
 	verify_data_length_nacl = verify_data_length;
-printf("cso sdl = %i, dl=%i, sl=%i\n", signed_data_length, data_length, signature_length);
 	cso_ret = crypto_sign_open(verify_data, &verify_data_length_nacl, signed_data, signed_data_length, public_key);
 	result = 0;
 	if (cso_ret == 0) {
