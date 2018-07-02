@@ -4,6 +4,10 @@ lappend auto_path [file join [file dirname [info script]] .. ..]
 
 package require nano
 
+proc test_selftest {} {
+	::nano::internal::selfTest
+	return true
+}
 proc test_signatures {} {
 	# Detached signature
 	set data [binary decode hex 0000000000000000000000000000000000000000000000000000000000000000]
@@ -12,8 +16,8 @@ proc test_signatures {} {
 	set sig_expected 1C2DE9B8A71215F949A11BBEA7EFA4ECD67A8C2B5A9AD98AE6B1AB7F7A3D2CFD715F570309148C7B39C346FB9B91B321D7E75BD598F271AF31AB60A99D086709
 
 	if {$sig ne $sig_expected} {
-		puts "\[FAIL\] Got: $sig"
-		puts "\[FAIL\] Exp: $sig_expected"
+		puts "\[1.FAIL\] Got: $sig"
+		puts "\[1.FAIL\] Exp: $sig_expected"
 
 		return false
 	}
@@ -23,8 +27,8 @@ proc test_signatures {} {
 	set pubKey [::nano::internal::publicKey $key]
 	set pubKey [string toupper [binary encode hex $pubKey]]
 	if {$pubKey ne $pubKey_expected} {
-		puts "\[FAIL\] Got: $pubKey"
-		puts "\[FAIL\] Exp: $pubKey_expected"
+		puts "\[2.FAIL\] Got: $pubKey"
+		puts "\[2.FAIL\] Exp: $pubKey_expected"
 
 		return false
 	}
@@ -37,8 +41,8 @@ proc test_signatures {} {
 	set sig    [::nano::internal::signDetached $data $key]
 	set verified [::nano::internal::verifyDetached $data $sig $pubKey]
 	if {!$verified} {
-		puts "\[FAIL\] Got: $verified"
-		puts "\[FAIL\] Exp: true"
+		puts "\[3.FAIL\] Got: $verified"
+		puts "\[3.FAIL\] Exp: true"
 		return false
 	}
 
@@ -46,8 +50,8 @@ proc test_signatures {} {
 	set pubKey [binary decode hex "7E0008FAD05BD9E22A8DEBA963CE3C9C769BC01B00974226D264C9078A7A98A8"]
 	set verified [::nano::internal::verifyDetached $data $sig $pubKey]
 	if {$verified} {
-		puts "\[FAIL\] Got: $verified"
-		puts "\[FAIL\] Exp: false"
+		puts "\[4.FAIL\] Got: $verified"
+		puts "\[4.FAIL\] Exp: false"
 		return false
 	}
 
@@ -60,8 +64,8 @@ proc test_hashing {} {
 	set hash [binary encode hex [::nano::internal::hashData $data]]
 	set hash_expected "84ac733547d71c312e707508646008a9d8f84f7093e60ca91e4eb376365ac1921fdde6e8ccb3875ea12369d9f6fb02237f51f4c05f3555e57d11800deda7319f"
 	if {$hash ne $hash_expected} {
-		puts "\[FAIL\] Got: $hash"
-		puts "\[FAIL\] Exp: $hash_expected"
+		puts "\[1.FAIL\] Got: $hash"
+		puts "\[1.FAIL\] Exp: $hash_expected"
 
 		return false
 	}
@@ -71,10 +75,27 @@ proc test_hashing {} {
 
 proc test_keygeneration {} {
 	set key [::nano::internal::generateKey]
-	puts "key=$key"
+	if {[string length $key] != 32} {
+		puts "\[1.FAIL\] Got: [string length $key]"
+		puts "\[1.FAIL\] Exp: 32"
+
+		return false
+	}
+
+	set data   [binary decode hex 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF]
+	set pubKey [::nano::internal::publicKey $key]
+	set sig    [::nano::internal::signDetached $data $key]
+	set verified [::nano::internal::verifyDetached $data $sig $pubKey]
+	if {!$verified} {
+		puts "\[2.FAIL\] Got: $verified"
+		puts "\[2.FAIL\] Exp: true"
+	}
+
+	return true
 }
 
 set tests {
+	selftest
 	signatures
 	hashing
 	keygeneration
