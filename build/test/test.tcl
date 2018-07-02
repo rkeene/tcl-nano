@@ -204,6 +204,15 @@ proc test_blocks {} {
 		return false
 	}
 
+	# Verifying a block
+	set signature [::nano::block::signBlockJSON $block $key -hex]
+	set verify    [::nano::block::verifyBlockJSON $block $signature [::nano::key::publicKeyFromPrivateKey $key]]
+	if {!$verify} {
+		puts "\[4.FAIL\] Got: $verify"
+		puts "\[4.FAIL\] Exp: true"
+
+		return false
+	}
 
 	return true
 }

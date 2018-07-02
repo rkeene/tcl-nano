@@ -11,6 +11,7 @@ namespace eval ::nano::block::create {}
 namespace eval ::nano::account {}
 
 set ::nano::block::hashLength 32
+set ::nano::block::signatureLength 64
 set ::nano::key::publicKeyLength 32
 set ::nano::key::privateKeyLength 32
 set ::nano::key::seedLength 32
@@ -300,9 +301,19 @@ proc ::nano::block::signBlock {blockData args} {
 	tailcall ::nano::block::signBlockHash $blockHash {*}$args
 }
 
+proc ::nano::block::signBlockJSON {blockJSON args} {
+	set blockData [::nano::block::fromJSON $blockJSON]
+
+	tailcall ::nano::block::signBlock $blockData {*}$args
+}
+
 proc ::nano::block::verifyBlockHash {blockHash signature pubKey} {
 	if {[string length $blockHash] != $::nano::block::hashLength} {
 		set blockHash [binary decode hex $blockHash]
+	}
+
+	if {[string length $signature] != $::nano::block::signatureLength} {
+		set signature [binary decode hex $signature]
 	}
 
 	if {[string length $pubKey] != $::nano::key::publicKeyLength} {
@@ -311,13 +322,19 @@ proc ::nano::block::verifyBlockHash {blockHash signature pubKey} {
 
 	set valid [::nano::internal::verifyDetached $blockHash $signature $pubKey]
 
-	return $signature
+	return $valid
 }
 
 proc ::nano::block::verifyBlock {blockData args} {
 	set blockHash [::nano::block::hash $blockData]
 
 	tailcall ::nano::block::verifyBlockHash $blockHash {*}$args
+}
+
+proc ::nano::block::verifyBlockJSON {blockJSON args} {
+	set blockData [::nano::block::fromJSON $blockJSON]
+
+	tailcall ::nano::block::verifyBlock $blockData {*}$args
 }
 
 proc ::nano::block::_dictToJSON {blockDict} {
