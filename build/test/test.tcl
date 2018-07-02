@@ -105,7 +105,11 @@ foreach test $tests {
 	if {![test_$test]} {
 		puts "FAILED test $test"
 		exit 1
+	} else {
+		puts "\[OK\] $test"
 	}
 }
+
+puts "DONE"
 
 exit 0
