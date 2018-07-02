@@ -116,8 +116,69 @@ static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *o
 }
 
 static int nano_tcl_generate_keypair(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
-	int csk_ret;
 	unsigned char secret_key[crypto_sign_SECRETKEYBYTES], public_key[crypto_sign_PUBLICKEYBYTES];
+	unsigned char *seed, *buffer, buffer_s[NANO_SECRET_KEY_LENGTH + 4];
+	long seed_index;
+	int seed_length, buffer_length;
+	int csk_ret, tglfo_ret;
+
+	if (objc != 1 && objc != 3) {
+		Tcl_WrongNumArgs(interp, 1, objv, "?seed index?");
+
+		return(TCL_ERROR);
+	}
+
+	if (objc == 1) {
+		csk_ret = crypto_sign_keypair(public_key, secret_key, 1);
+		if (csk_ret != 0) {
+			Tcl_SetResult(interp, "Internal error", NULL);
+
+			return(TCL_ERROR);
+		}
+	} else {
+		seed = Tcl_GetByteArrayFromObj(objv[1], &seed_length);
+		if (seed_length != NANO_SECRET_KEY_LENGTH) {
+			Tcl_SetResult(interp, "Seed is not the right size", NULL);
+
+			return(TCL_ERROR);
+		}
+
+		tglfo_ret = Tcl_GetLongFromObj(interp, objv[2], &seed_index);
+		if (tglfo_ret != TCL_OK) {
+			return(tglfo_ret);
+		}
+
+		if (seed_index > 0xffffffffL) {
+			Tcl_SetResult(interp, "Seed exceed maximum value", NULL);
+
+			return(TCL_ERROR);
+		}
+
+		buffer_length = sizeof(buffer_s);
+		buffer = buffer_s;
+
+		memcpy(buffer, seed, seed_length);
+		buffer += seed_length;
+		buffer[0] = (seed_index >> 24) & 0xff;
+		buffer[1] = (seed_index >> 16) & 0xff;
+		buffer[2] = (seed_index >> 8) & 0xff;
+		buffer[3] = seed_index & 0xff;
+		buffer -= seed_length;
+
+		blake2b(secret_key, NANO_SECRET_KEY_LENGTH, buffer, buffer_length, NULL, 0);
+	}
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(secret_key, NANO_SECRET_KEY_LENGTH));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
+static int nano_tcl_generate_seed(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	unsigned char seed[NANO_SECRET_KEY_LENGTH];
+	int seed_length;
 
 	if (objc != 1) {
 		Tcl_WrongNumArgs(interp, 1, objv, "");
@@ -125,14 +186,10 @@ static int nano_tcl_generate_keypair(ClientData clientData, Tcl_Interp *interp, 
 		return(TCL_ERROR);
 	}
 
-	csk_ret = crypto_sign_keypair(public_key, secret_key, 1);
-	if (csk_ret != 0) {
-		Tcl_SetResult(interp, "Internal error", NULL);
+	seed_length = sizeof(seed);
+	randombytes(seed, seed_length);
 
-		return(TCL_ERROR);
-	}
-
-	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(secret_key, NANO_SECRET_KEY_LENGTH));
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(seed, seed_length));
 
 	return(TCL_OK);
 
@@ -373,8 +430,9 @@ int Nano_Init(Tcl_Interp *interp) {
 
 	Tcl_CreateObjCommand(interp, "::nano::internal::selfTest", nano_tcl_self_test, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
+	Tcl_CreateObjCommand(interp, "::nano::internal::generateSeed", nano_tcl_generate_seed, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key, NULL, NULL);
+	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
 
