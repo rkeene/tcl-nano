@@ -48,5 +48,6 @@ distclean: clean
 mrproper: distclean
 	rm -f configure aclocal.m4 config.guess config.sub install-sh
 	rm -rf tweetnacl blake2b
+	rm -rf build/tweetnacl/out build/blake2b/out
 
 .PHONY: all test clean distclean mrproper
