@@ -15,3 +15,5 @@ tweetnacl
 build/tweetnacl/out
 blake2b
 build/blake2b/out
+build/work
+build/tcl
