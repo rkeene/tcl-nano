@@ -42,6 +42,41 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 
 	return;
 }
+#elif 1
+#include <tcl.h>
+
+void randombytes(uint8_t *buffer, uint64_t length) {
+
+	Tcl_Panic("Random data is not available");
+
+#if 0
+	Tcl_Channel fd;
+
+	fd = Tcl_FSOpenFileChannel(NULL, Tcl_NewStringObj("/dev/urandom", -1), "rb", 0644);
+	if (!fd) {
+		Tcl_Panic("Unable to get random data");
+	}
+
+	while (length > 0) {
+		read_ret = Tcl_ReadChars(fd, buffer, length);
+		if (read_ret <= 0) {
+			continue;
+		}
+
+		buffer += read_ret;
+		length -= read_ret;
+	}
+
+	Tcl_Close(fd);
+#endif
+
+	return;
+
+	/* NOTREACH */
+	buffer = buffer;
+	length = length;
+}
+
 #else
 #  ifdef HAVE_SYS_TYPES_H
 #    include <sys/types.h>
