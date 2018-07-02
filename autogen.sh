@@ -76,3 +76,17 @@ fi
 autoconf
 
 rm -rf autom4te.cache
+
+set -e
+
+# Assemble tweetnacl
+make -C build/tweetnacl
+rm -rf tweetnacl
+mkdir tweetnacl
+cp build/tweetnacl/out/* tweetnacl/
+
+# Assemble blake2b
+make -C build/blake2b
+rm -rf blake2b
+mkdir blake2b
+cp build/blake2b/out/* blake2b/

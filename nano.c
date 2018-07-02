@@ -6,7 +6,7 @@
 #include <tcl.h>
 
 #include "tweetnacl.h"
-#include "blake2-nacl.h"
+#include "blake2.h"
 
 #define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)

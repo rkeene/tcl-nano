@@ -11,8 +11,7 @@ configure
 install-sh
 config.log
 config.status
-blake2b/blake2b.o
-blake2b/blake2b-ref-nacl.c
-tweetnacl/tweetnacl.c
-tweetnacl/tweetnacl.h
-tweetnacl/tweetnacl.o
+tweetnacl
+build/tweetnacl/out
+blake2b
+build/blake2b/out
