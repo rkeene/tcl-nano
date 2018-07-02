@@ -4,9 +4,11 @@ package require json
 package require json::write
 
 namespace eval ::nano {}
-namespace eval ::nano::block {}
-namespace eval ::nano::block::account {}
 namespace eval ::nano::address {}
+namespace eval ::nano::key {}
+namespace eval ::nano::block {}
+namespace eval ::nano::block::create {}
+namespace eval ::nano::account {}
 
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
 proc ::nano::address::toPublicKey {address args} {
@@ -138,6 +140,82 @@ proc ::nano::address::fromPublicKey {pubKey args} {
 	return $address
 }
 
+proc ::nano::address::fromPrivateKey {key args} {
+	set pubKey [::nano::key::publicKeyFromPrivateKey $key]
+	tailcall ::nano::address::fromPublicKey $pubKey {*}$args
+}
+
+proc ::nano::key::generateNewSeed {} {
+	tailcall ::nano::internal::generateSeed
+}
+
+proc ::nano::key::generateNewKey {} {
+	tailcall ::nano::internal::generateKey
+}
+
+proc ::nano::key::computeKey {seed args} {
+	set index 0
+	set outputFormat "bytes"
+	if {[llength $args] > 0} {
+		if {[string index [lindex $args 0] 0] ne "-"} {
+			set index [lindex $args 0]
+			set args [lrange $args 1 end]
+		}
+
+		foreach arg $args {
+			switch -exact -- $arg {
+				"-hex" {
+					set outputFormat "hex"
+				}
+				"-binary" {
+					set outputFormat "bytes"
+				}
+				default {
+					return -code error "Invalid option: $arg"
+				}
+			}
+		}
+	}
+	if {[string length $seed] != 32} {
+		set seed [binary decode hex $seed]
+	}
+
+	set key [::nano::internal::generateKey $seed $index]
+	if {$outputFormat eq "hex"} {
+		set key [binary encode hex $key]
+	}
+
+	return $key
+}
+
+proc ::nano::key::publicKeyFromPrivateKey {key args} {
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	if {[string length $key] != 32} {
+		set key [binary decode hex $key]
+	}
+
+	set pubKey [::nano::internal::publicKey $key]
+	if {$outputFormat eq "hex"} {
+		set pubKey [string toupper [binary encode hex $pubKey]]
+	}
+
+	return $pubKey
+}
+
 proc ::nano::block::fromJSON {json} {
 	array set block [json::json2dict $json]
 
@@ -181,17 +259,59 @@ proc ::nano::block::fromJSON {json} {
 	return $blockData
 }
 
-proc ::nano::block::_dictToJSON {blockDict {addArgs_fromPublicKey ""}} {
+proc ::nano::block::_dictToJSON {blockDict} {
 	array set block $blockDict
 
-	set blockJSONFields {type account source destination previous representative balance link link_as_account _blockHash}
+	if {[info exists block(signKey)] && ([info exists block(_blockData)] || [info exists block(_blockHash)])} {
+		if {![info exists block(_blockHash)]} {
+			set block(_blockHash) [binary encode hex [::nano::block::hash $block(_blockData)]]
+		}
+
+		set signKey   [binary decode hex $block(signKey)]
+		set blockHash [binary decode hex $block(_blockHash)]
+
+		set signature [::nano::internal::signDetached $blockHash $signKey]
+		set signature [binary encode hex $signature]
+		set signature [string toupper $signature]
+
+		set block(signature) $signature
+	}
+
+	if {$block(type) eq "state"} {
+		if {![info exists block(link)]} {
+			set block(link) [::nano::address::toPublicKey $block(link_as_account) -hex]
+		}
+		if {![info exists block(link_as_address)]} {
+			set addressFormatFlag "-nano"
+			foreach field {account destination representative} {
+				if {![info exists block($field)]} {
+					continue
+				}
+				if {[string match "nano_*" $block($field)]} {
+					set addressFormatFlag "-nano"
+				} else {
+					set addressFormatFlag "-xrb"
+				}
+
+				break
+			}
+
+			set block(link_as_account) [::nano::address::fromPublicKey $block(link) $addressFormatFlag]
+		}
+	}
+
+	set blockJSONFields {
+		type account source destination previous representative balance
+		link link_as_account _blockHash _workHash signature
+	}
+
 	set blockJSONEntries [lmap field $blockJSONFields {
 		if {![info exists block($field)]} {
 			continue
 		}
 
 		switch -exact -- $field {
-			"source" - "previous" - "link" - "_blockHash" {
+			"source" - "previous" - "link" - "_blockHash" - "_workHash" {
 				set block($field) [string toupper $block($field)]
 			}
 		}
@@ -204,13 +324,16 @@ proc ::nano::block::_dictToJSON {blockDict {addArgs_fromPublicKey ""}} {
 	return $blockJSON
 }
 
-proc ::nano::block::toJSON {blockData args} {
+proc ::nano::block::toDict {blockData args} {
 	set block(type) ""
 	set addressPrefix "nano_"
 	foreach arg $args {
 		switch -glob -- $arg {
 			"-type=*" {
 				set block(type) [lindex [split $arg =] 1]
+			}
+			"-signKey=*" {
+				set block(signKey) [string range $arg 9 end]
 			}
 			"-xrb" {
 				set addressPrefix "xrb_"
@@ -219,7 +342,6 @@ proc ::nano::block::toJSON {blockData args} {
 				set addressPrefix "nano_"
 			}
 			default {
-				return -code error "Invalid option: $arg"
 			}
 		}
 	}
@@ -296,7 +418,15 @@ proc ::nano::block::toJSON {blockData args} {
 		}
 	}
 
-	set blockJSON [_dictToJSON [array get block] ${addArgs_fromPublicKey}]
+	set block(_blockData) $blockData
+
+	return [array get block]
+}
+
+proc ::nano::block::toJSON {blockData args} {
+	set blockDict [::nano::block::toDict $blockData {*}$args]
+
+	set blockJSON [_dictToJSON $blockDict]
 
 	return $blockJSON
 }
@@ -326,22 +456,28 @@ proc ::nano::block::hash {blockData args} {
 	return $hash
 }
 
-proc ::nano::block::account::_finalizeBlock {blockDict} {
+proc ::nano::block::jsonFromDict {blockDict} {
 	set blockJSON [::nano::block::_dictToJSON $blockDict]
 	set block [::nano::block::fromJSON $blockJSON]
-	set blockHash [::nano::block::hash $block -hex]
-	dict set blockDict "_blockHash" $blockHash
+	set blockHash [::nano::block::hash $block]
+
+	dict set blockDict "_blockHash" [binary encode hex $blockHash]
+
 	set blockJSON [::nano::block::_dictToJSON $blockDict]
+
 	return $blockJSON
 }
 
-proc ::nano::block::account::send {args} {
+#   send from <account> to <account> previousBalance <balance>
+#        amount <amount> sourceBlock <sourceBlockHash>
+#        previous <previousBlockHash> ?representative <representative>?
+proc ::nano::block::create::send {args} {
 	array set block $args
 	if {![info exists block(representative)]} {
 		set block(representative) $block(from)
 	}
 
-	set block(balance) [expr {$block(priorBalance) - $block(amount)}]
+	set block(balance) [expr {$block(previousBalance) - $block(amount)}]
 
 	set blockDict [dict create \
 		"type" state \
@@ -350,12 +486,21 @@ proc ::nano::block::account::send {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link_as_account" $block(to) \
+		"_workHash" $block(previous) \
 	]
 
-	tailcall _finalizeBlock $blockDict
+	if {[info exists block(signKey)]} {
+		dict set blockDict signKey $block(signKey)
+	}
+
+	tailcall ::nano::block::jsonFromDict $blockDict
 }
 
-proc ::nano::block::account::receive {args} {
+# Usage:
+#   receive to <account> previousBalance <balance> amount <amount>
+#           sourceBlock <sourceBlockHash> ?previous <previousBlockHash>?
+#           ?representative <representative>?
+proc ::nano::block::create::receive {args} {
 	array set block $args
 	if {![info exists block(representative)]} {
 		set block(representative) $block(to)
@@ -363,9 +508,13 @@ proc ::nano::block::account::receive {args} {
 
 	if {![info exists block(previous)]} {
 		set block(previous) "0000000000000000000000000000000000000000000000000000000000000000"
+		set block(previousBalance) 0
+		set block(_workHash) [::nano::address::toPublicKey $block(to) -hex]
+	} else {
+		set block(_workHash) $block(previous)
 	}
 
-	set block(balance) [expr {$block(priorBalance) + $block(amount)}]
+	set block(balance) [expr {$block(previousBalance) + $block(amount)}]
 
 	set blockDict [dict create \
 		"type" state \
@@ -374,15 +523,22 @@ proc ::nano::block::account::receive {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link" $block(sourceBlock) \
+		"_workHash" $block(_workHash) \
 	]
 
-	tailcall _finalizeBlock $blockDict
+	if {[info exists block(signKey)]} {
+		dict set blockDict signKey $block(signKey)
+	}
+
+	tailcall ::nano::block::jsonFromDict $blockDict
 }
 
-proc ::nano::block::account::setRepresentative {args} {
+# Usage:
+#   setRepresentative account <account> previous <previousBlockHash>
+#                     representative <newRepresentative> balance <balance>
+proc ::nano::block::create::setRepresentative {args} {
 	array set block $args
 
-	set block(balance) $block(priorBalance)
 	set block(link) "0000000000000000000000000000000000000000000000000000000000000000"
 
 	set blockDict [dict create \
@@ -392,10 +548,114 @@ proc ::nano::block::account::setRepresentative {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link" $block(link) \
+		"_workHash" $block(previous) \
 	]
 
-	tailcall _finalizeBlock $blockDict
+	if {[info exists block(signKey)]} {
+		dict set blockDict signKey $block(signKey)
+	}
+
+	tailcall ::nano::block::jsonFromDict $blockDict
 }
 
+# -- Tracked accounts --
+proc ::nano::account::setFrontier {account frontierHash balance representative} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+	set ::nano::account::frontiers($accountPubKey) [dict create \
+		frontierHash $frontierHash balance $balance representative $representative \
+	]
+}
+
+proc ::nano::account::getFrontier {account args} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+	if {![info exists ::nano::account::frontiers($accountPubKey)]} {
+		set frontier [dict create balance 0]
+	} else {
+		set frontier $::nano::account::frontiers($accountPubKey)
+	}
+
+	return [dict get $frontier {*}$args]
+}
+
+proc ::nano::account::addPending {account blockHash amount} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+
+	set ::nano::account::pending([list $accountPubKey $blockHash]) [dict create amount $amount]
+}
+
+proc ::nano::account::receive {account blockHash signKey} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+
+	set frontierInfo [getFrontier $account]
+	dict with frontierInfo {}
+
+	set blockInfo $::nano::account::pending([list $accountPubKey $blockHash])
+	unset ::nano::account::pending([list $accountPubKey $blockHash])
+
+	set amount [dict get $blockInfo amount]
+	set blockArgs [list to $account previousBalance $balance \
+	                    amount $amount sourceBlock $blockHash \
+	                    signKey $signKey representative $representative]
+
+	if {[info exists frontierHash]} {
+		lappend blockArgs previous $frontierHash
+	}
+
+	set block [::nano::block::create::receive {*}$blockArgs]
+
+	set newFrontierHash [dict get [json::json2dict $block] "_blockHash"]
+	set balance [expr {$balance + $amount}]
+
+	setFrontier $account $newFrontierHash $balance $representative
+
+	return $block
+}
+
+proc ::nano::account::send {fromAccount toAccount amount signKey} {
+	set fromAccountPubKey [::nano::address::toPublicKey $fromAccount -hex]
+	set toAccountPubKey   [::nano::address::toPublicKey $fromAccount -hex]
+
+	set fromFrontierInfo [getFrontier $fromAccount]
+	set toFrontierInfo [getFrontier $toAccount]
+
+	set fromBalance [dict get $fromFrontierInfo balance]
+	set fromFrontierHash [dict get $fromFrontierInfo frontierHash]
+	set fromRepresentative [dict get $fromFrontierInfo representative]
+
+	set signKey [binary encode hex $signKey]
+
+	set block [::nano::block::create::send \
+		from            $fromAccount \
+		to              $toAccount \
+		previous        $fromFrontierHash \
+		previousBalance $fromBalance \
+		amount          $amount \
+		signKey         $signKey
+	]
+
+	set newBalance [expr {$fromBalance - $amount}]
+	set newFrontierHash [dict get [json::json2dict $block] "_blockHash"]
+
+	setFrontier $fromAccount $newFrontierHash $newBalance $fromRepresentative
+	addPending  $toAccount $newFrontierHash $amount
+
+	return $block
+}
+
+proc ::nano::account::receiveAllPending {key} {
+	set outBlocks [list]
+
+	set accountPubKey [::nano::key::publicKeyFromPrivateKey $key -hex]
+
+	set signKey [binary encode hex $key]
+	set account [::nano::address::fromPublicKey $accountPubKey]
+
+	foreach accountPubKeyBlockHash [array names ::nano::account::pending [list $accountPubKey *]] {
+		set blockHash [lindex $accountPubKeyBlockHash 1]
+		lappend outBlocks [receive $account $blockHash $signKey]
+	}
+
+	return $outBlocks
+}
 
 package provide nano 0

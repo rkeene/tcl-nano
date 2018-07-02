@@ -71,11 +71,23 @@ proc test_hashing {} {
 		return false
 	}
 
+	# Reduced size test
+	set data [binary decode hex 4451686437A2BF5C4759100DE2ADE0F39B6877275AF997906B71B1A8EF1550A2]
+	set hash [binary encode hex [::nano::internal::hashData $data 32]]
+	set hash_expected "863d40311043ad24e56034de73fb0b77a9f13fbac37ea61368509839ba1832e2"
+	if {$hash ne $hash_expected} {
+		puts "\[2.FAIL\] Got: $hash"
+		puts "\[2.FAIL\] Exp: $hash_expected"
+
+		return false
+	}
+
 	return true
 }
 
 proc test_keygeneration {} {
-	set key [::nano::internal::generateKey]
+	# Generate a new key pair
+	set key [::nano::key::generateNewKey]
 	if {[string length $key] != 32} {
 		puts "\[1.FAIL\] Got: [string length $key]"
 		puts "\[1.FAIL\] Exp: 32"
@@ -83,6 +95,7 @@ proc test_keygeneration {} {
 		return false
 	}
 
+	# Generate a public key from the private key
 	set data   [binary decode hex 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF]
 	set pubKey [::nano::internal::publicKey $key]
 	set sig    [::nano::internal::signDetached $data $key]
@@ -94,14 +107,26 @@ proc test_keygeneration {} {
 		return false
 	}
 
+	# Create a key pair from a seed and index
+	set seed [binary decode hex C4D214F19E706E9C7487CEF00DE8059200C32414F0ED82E5E33B523AEDF719BA]
+	set key [::nano::key::computeKey $seed 0]
+	set pubKey [string toupper [binary encode hex [::nano::internal::publicKey $key]]]
+	set pubKey_expected "B63EC7A797F2A5858C754EC9C0537920C4F9DEA58F9F411F0C2161F6D303AA7A"
+	if {$pubKey ne $pubKey_expected} {
+		puts "\[3.FAIL\] Got: $pubKey"
+		puts "\[3.FAIL\] Exp: $pubKey_expected"
+
+		return false
+	}
+
 	return true
 }
 
 proc test_addressformat {} {
 	set addr nano_35ynhw4qd1pam88azf86nk8ka5sthnzaubcw5fawingep1sjydwaiw8xy7t6
-	set pub  8fd47f057582c8998c8fb4c4a48d240f3a7d3e8da55c1b51c851ccb0331f2f88
+	set pub  8FD47F057582C8998C8FB4C4A48D240F3A7D3E8DA55C1B51C851CCB0331F2F88
 
-	set pubCheck [string tolower [::nano::address::toPublicKey $addr -hex -verify]]
+	set pubCheck [string toupper [::nano::address::toPublicKey $addr -hex -verify]]
 	if {$pubCheck ne $pub} {
 		puts "\[1.FAIL\] Got: $pubCheck"
 		puts "\[1.FAIL\] Exp: $pub"
@@ -120,12 +145,39 @@ proc test_addressformat {} {
 	return true
 }
 
+proc test_blocks {} {
+	set seed [binary decode hex C4D214F19E706E9C7487CEF00DE8059200C32414F0ED82E5E33B523AEDF719BA]
+	set key [::nano::key::computeKey $seed 0 -hex]
+	set address [::nano::address::fromPrivateKey $key -xrb]
+
+	set block [::nano::block::create::receive \
+		to $address \
+		amount 1000000000000000000000000000000 \
+		sourceBlock 207D3043D77B84E892AD4949D147386DE4C2FE4B2C8DC13F9469BC4A764681A7 \
+		signKey $key
+	]
+
+	set block [::nano::block::create::send \
+		from $address \
+		to "xrb_1unc5hriitrdjq5dnyhr3zmd8t5hm7rhm9a1u3uun5ycbaacpu649yh5c4b5" \
+		previous "D46BFC2E35B5A3CA4230839D67676F4A8498C2567F571D2B66A7F7B72214DEEE" \
+		previousBalance 1000000000000000000000000000000 \
+		amount 1000000000000000000000000000000 \
+		signKey $key
+	]
+
+	set block [::nano::block::toDict [::nano::block::fromJSON $block]]
+
+	return true
+}
+
 set tests {
 	selftest
 	signatures
 	hashing
 	keygeneration
 	addressformat
+	blocks
 }
 
 foreach test $tests {
