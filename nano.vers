@@ -1,0 +1,6 @@
+{
+	global:
+		Nano_Init;
+	local:
+		*;
+};

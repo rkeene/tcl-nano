@@ -1,6 +1,6 @@
 CC            := @CC@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I./tweetnacl/ -I./blake2b/ -DSUPERCOP=1 @CPPFLAGS@ @SHOBJCPPFLAGS@
+CPPFLAGS      := -I./tweetnacl/ -I./blake2b/ -DSUPERCOP=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
@@ -11,6 +11,8 @@ all: @EXTENSION_TARGET@
 ifeq (@TCLEXT_BUILD@,shared)
 @EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)
+	-@WEAKENSYMS@ @EXTENSION_TARGET@
+	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
 @EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)

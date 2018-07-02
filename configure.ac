@@ -69,5 +69,8 @@ if test "$TCLEXT_BUILD" != 'static'; then
 	fi
 fi
 
+dnl Setup a stable ABI
+DC_SETUP_STABLE_API(nano.vers, nano.syms)
+
 dnl Produce output
-AC_OUTPUT(Makefile pkgIndex.tcl)
+AC_OUTPUT(Makefile pkgIndex.tcl nano.syms)
