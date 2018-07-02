@@ -10,6 +10,11 @@ namespace eval ::nano::block {}
 namespace eval ::nano::block::create {}
 namespace eval ::nano::account {}
 
+set ::nano::block::hashLength 32
+set ::nano::key::publicKeyLength 32
+set ::nano::key::privateKeyLength 32
+set ::nano::key::seedLength 32
+
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
 proc ::nano::address::toPublicKey {address args} {
 	set performChecksumCheck false
@@ -106,7 +111,7 @@ proc ::nano::address::fromPublicKey {pubKey args} {
 	}
 
 	if {![info exists inputFormat]} {
-		if {[string length $pubKey] == 32} {
+		if {[string length $pubKey] == $::nano::key::publicKeyLength} {
 			set inputFormat "bytes"
 		} else {
 			set inputFormat "hex"
@@ -117,7 +122,7 @@ proc ::nano::address::fromPublicKey {pubKey args} {
 		set pubKey [binary decode hex $pubKey]
 	}
 
-	if {[string length $pubKey] != 32} {
+	if {[string length $pubKey] != $::nano::key::publicKeyLength} {
 		return -code error "Invalid key (length)"
 	}
 
@@ -176,7 +181,7 @@ proc ::nano::key::computeKey {seed args} {
 			}
 		}
 	}
-	if {[string length $seed] != 32} {
+	if {[string length $seed] != $::nano::key::seedLength} {
 		set seed [binary decode hex $seed]
 	}
 
@@ -204,7 +209,7 @@ proc ::nano::key::publicKeyFromPrivateKey {key args} {
 		}
 	}
 
-	if {[string length $key] != 32} {
+	if {[string length $key] != $::nano::key::privateKeyLength} {
 		set key [binary decode hex $key]
 	}
 
@@ -272,11 +277,11 @@ proc ::nano::block::signBlockHash {blockHash key args} {
 		}
 	}
 
-	if {[string length $blockHash] != 32} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
 		set blockHash [binary decode hex $blockHash]
 	}
 
-	if {[string length $key] != 32} {
+	if {[string length $key] != $::nano::key::privateKeyLength} {
 		set key [binary decode hex $key]
 	}
 
@@ -296,11 +301,11 @@ proc ::nano::block::signBlock {blockData args} {
 }
 
 proc ::nano::block::verifyBlockHash {blockHash signature pubKey} {
-	if {[string length $blockHash] != 32} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
 		set blockHash [binary decode hex $blockHash]
 	}
 
-	if {[string length $pubKey] != 32} {
+	if {[string length $pubKey] != $::nano::key::publicKeyLength} {
 		set key [binary decode hex $pubKey]
 	}
 
@@ -496,7 +501,7 @@ proc ::nano::block::hash {blockData args} {
 		}
 	}
 
-	set hash [::nano::internal::hashData $blockData 32]
+	set hash [::nano::internal::hashData $blockData $::nano::block::hashLength]
 
 	if {$outputFormat eq "hex"} {
 		set hash [string toupper [binary encode hex $hash]]
