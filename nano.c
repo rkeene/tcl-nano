@@ -303,17 +303,37 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 
 static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *data, result[crypto_sign_BYTES];
+	int tgifo_ret;
 	int data_length, result_length;
 
-	if (objc != 2) {
-		Tcl_WrongNumArgs(interp, 1, objv, "data");
+	if (objc < 2 || objc > 3) {
+		Tcl_WrongNumArgs(interp, 1, objv, "data ?hashLength?");
 
 		return(TCL_ERROR);
 	}
 
 	data = Tcl_GetByteArrayFromObj(objv[1], &data_length);
-	crypto_hash(result, data, data_length);
-	result_length = crypto_sign_BYTES;
+	if (objc == 3) {
+		tgifo_ret = Tcl_GetIntFromObj(interp, objv[2], &result_length);
+		if (tgifo_ret != TCL_OK) {
+			return(tgifo_ret);
+		}
+
+		if (result_length > sizeof(result)) {
+			Tcl_SetResult(interp, "Hash length too large", NULL);
+
+			return(TCL_ERROR);
+		}
+
+		blake2b(result, result_length, data, data_length, NULL, 0);
+	} else {
+		/*
+		 * Default to the same as the cryptographic primitive
+		 */
+		crypto_hash(result, data, data_length);
+		result_length = crypto_sign_BYTES;
+	}
+
 	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, result_length));
 
 	return(TCL_OK);
@@ -336,6 +356,7 @@ static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int obj
 }
 
 int Nano_Init(Tcl_Interp *interp) {
+	int te_ret;
 	const char nanoInitScript[] = {
 #include "nano.tcl.h"
 		0x00
@@ -358,7 +379,10 @@ int Nano_Init(Tcl_Interp *interp) {
 	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
 
 	if (interp) {
-		Tcl_Eval(interp, nanoInitScript);
+		te_ret = Tcl_Eval(interp, nanoInitScript);
+		if (te_ret != TCL_OK) {
+			return(te_ret);
+		}
 	}
 
 	return(TCL_OK);
