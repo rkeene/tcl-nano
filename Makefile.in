@@ -1,45 +1,54 @@
 CC            := @CC@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I./tweetnacl/ -I./blake2b/ -DSUPERCOP=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
+CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DSUPERCOP=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
+srcdir        := @srcdir@
 export CC CFLAGS CPPFLAGS
+@SET_MAKE@
 
 all: @EXTENSION_TARGET@
 
 ifeq (@TCLEXT_BUILD@,shared)
-@EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)
+@EXTENSION_TARGET@: @srcdir@/tweetnacl/tweetnacl.o @srcdir@/blake2b/blake2b.o nano.o Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o @srcdir@/tweetnacl/tweetnacl.o @srcdir@/blake2b/blake2b.o $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
-@EXTENSION_TARGET@: tweetnacl/tweetnacl.o blake2b/blake2b.o nano.o Makefile
+@EXTENSION_TARGET@: @srcdir@/tweetnacl/tweetnacl.o @srcdir@/blake2b/blake2b.o nano.o Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o tweetnacl/tweetnacl.o blake2b/blake2b.o $(LIBS)
 endif
 
-nano.o: nano.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c nano.c
+nano.o: @srcdir@/nano.c nano.tcl.h Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
 
-tweetnacl/tweetnacl.o:
-	$(MAKE) -C tweetnacl tweetnacl.o
+nano.tcl.h: @srcdir@/nano.tcl Makefile
+	od -A n -v -t xC < '@srcdir@/nano.tcl' > nano.tcl.h.new.1
+	sed 's@  *@@g;s@..@0x&, @g' < nano.tcl.h.new.1 > nano.tcl.h.new.2
+	rm -f nano.tcl.h.new.1
+	mv nano.tcl.h.new.2 nano.tcl.h
 
-blake2b/blake2b.o:
-	$(MAKE) -C blake2b blake2b.o
+@srcdir@/tweetnacl/tweetnacl.o:
+	$(MAKE) -C @srcdir@/tweetnacl tweetnacl.o
+
+@srcdir@/blake2b/blake2b.o:
+	$(MAKE) -C @srcdir@/blake2b blake2b.o
 
 test: @EXTENSION_TARGET@
-	cd build/test && ./test.tcl
+	@srcdir@/build/test/test.tcl
 
 clean:
 	rm -f @EXTENSION_TARGET@ nano.o
-	$(MAKE) -C tweetnacl clean
-	$(MAKE) -C blake2b clean
+	$(MAKE) -C @srcdir@/tweetnacl clean
+	$(MAKE) -C @srcdir@/blake2b clean
 
 distclean:
 	rm -f @EXTENSION_TARGET@ nano.o
-	rm -f Makefile pkgIndex.tcl config.log config.status
-	$(MAKE) -C tweetnacl distclean
-	$(MAKE) -C blake2b distclean
+	rm -f Makefile pkgIndex.tcl config.log config.status nano.syms
+	rm -f nano.tcl.h
+	$(MAKE) -C @srcdir@/tweetnacl distclean
+	$(MAKE) -C @srcdir@/blake2b distclean
 
 mrproper: distclean
 	rm -f configure aclocal.m4 config.guess config.sub install-sh

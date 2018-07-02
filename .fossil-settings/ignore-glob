@@ -1,6 +1,7 @@
 nano.so
 nano.o
 nano.syms
+nano.tcl.h
 Makefile
 pkgIndex.tcl
 aclocal.m4
