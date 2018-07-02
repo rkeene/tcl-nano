@@ -11,7 +11,7 @@ dnl Determine system information
 DC_CHK_OS_INFO
 
 dnl Look for appropriate headers
-AC_CHECK_HEADERS(unistd.h stdlib.h string.h strings.h)
+AC_CHECK_HEADERS(stdint.h limits.h unistd.h stdlib.h string.h sys/stat.h sys/types.h fcntl.h sys/random.h)
 
 dnl Perform Tcl Extension required stuff
 TCLEXT_INIT
@@ -40,6 +40,8 @@ AC_ARG_ENABLE([debug], AS_HELP_STRING([--enable-debug], [enable debugging parame
 if test "$tcl_nano_debug" = 'true'; then
 	AC_DEFINE(TCLEXT_TCL_NANO_DEBUG, [1], [Enable debugging build])
 	AX_CHECK_COMPILE_FLAG([-fcheck-pointer-bounds], [CFLAGS="$CFLAGS -fcheck-pointer-bounds"])
+	AX_CHECK_COMPILE_FLAG([-g3], [CFLAGS="$CFLAGS -g3"])
+	AX_CHECK_COMPILE_FLAG([-ggdb3], [CFLAGS="$CFLAGS -ggdb3"])
 else
 	dnl If we are not doing debugging disable some of the more annoying warnings
 	AX_CHECK_COMPILE_FLAG([-Wno-unused-value], [CFLAGS="$CFLAGS -Wno-unused-value"])
@@ -70,7 +72,7 @@ if test "$TCLEXT_BUILD" != 'static'; then
 fi
 
 dnl Setup a stable ABI
-DC_SETUP_STABLE_API(nano.vers, nano.syms)
+DC_SETUP_STABLE_API([${srcdir}/nano.vers], nano.syms)
 if test "$tcl_nano_debug" = 'true'; then
 	WEAKENSYMS=':'
 	REMOVESYMS=':'
