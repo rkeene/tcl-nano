@@ -11,6 +11,10 @@
 
 #define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
+#define NANO_BLOCK_HASH_LENGTH 32
+#define NANO_WORK_VALUE_LENGTH 8
+#define NANO_WORK_HASH_LENGTH  8
+#define NANO_WORK_DEFAULT_MIN  0xffffffc000000000LLU
 #define TclNano_AttemptAlloc(x) ((void *) Tcl_AttemptAlloc(x))
 #define TclNano_Free(x) Tcl_Free((char *) x)
 
@@ -325,6 +329,168 @@ static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int obj
 	clientData = clientData;
 }
 
+static int nano_validate_work(const unsigned char *blockhash, const unsigned char *work, uint64_t workMin) {
+	unsigned char workReversed[NANO_WORK_VALUE_LENGTH], workCheck[NANO_WORK_HASH_LENGTH];
+	unsigned int idxIn, idxOut;
+	blake2b_state workhash_state;
+	uint64_t workValue;
+	int blake2_ret;
+
+	idxIn = sizeof(workReversed) - 1;
+	idxOut = 0;
+	while (idxOut < sizeof(workReversed)) {
+		workReversed[idxOut] = work[idxIn];
+		idxOut++;
+		idxIn--;
+	}
+
+	blake2_ret = blake2b_init(&workhash_state, sizeof(workCheck));
+	if (blake2_ret != 0) {
+		return(0);
+	}
+
+	blake2_ret = blake2b_update(&workhash_state, workReversed, sizeof(workReversed));
+	if (blake2_ret != 0) {
+		return(0);
+	}
+
+	blake2_ret = blake2b_update(&workhash_state, blockhash, NANO_BLOCK_HASH_LENGTH);
+	if (blake2_ret != 0) {
+		return(0);
+	}
+
+	blake2_ret = blake2b_final(&workhash_state, workCheck, sizeof(workCheck));
+	if (blake2_ret != 0) {
+		return(0);
+	}
+
+	workValue = 0;
+	for (idxIn = sizeof(workCheck); idxIn > 0; idxIn--) {
+		workValue <<= 8;
+		workValue |= workCheck[idxIn - 1];
+	}
+
+	if (workValue < workMin) {
+		/* Fails to meet the requirements */
+		return(0);
+	}
+
+	return(1);
+}
+
+static void nano_generate_work(const unsigned char *blockhash, unsigned char *workOut, uint64_t workMin) {
+	unsigned char work[NANO_WORK_VALUE_LENGTH];
+	unsigned int offset;
+	int work_valid;
+
+	memcpy(work, blockhash, sizeof(work));
+
+	while (1) {
+		work_valid = nano_validate_work(blockhash, work, workMin);
+		if (work_valid) {
+			break;
+		}
+
+		offset = 0;
+		while (work[offset] == 0xff) {
+			work[offset] = 0;
+			offset++;
+			offset %= sizeof(work);
+		}
+
+		work[offset] = (((int) work[offset]) + 1) & 0xff;
+	}
+
+	memcpy(workOut, work, sizeof(work));
+
+	return;
+}
+
+static int nano_tcl_validate_work(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	unsigned char *blockhash, *work;
+	uint64_t workMin = NANO_WORK_DEFAULT_MIN;
+	int blockhash_length, work_length;
+
+	if (objc < 3 || objc > 4) {
+		Tcl_WrongNumArgs(interp, 1, objv, "workBlockhash work ?workMin?");
+
+		return(TCL_ERROR);
+	}
+
+	blockhash = Tcl_GetByteArrayFromObj(objv[1], &blockhash_length);
+	if (blockhash_length != NANO_BLOCK_HASH_LENGTH) {
+		Tcl_SetResult(interp, "Block hash size is wrong", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	work = Tcl_GetByteArrayFromObj(objv[2], &work_length);
+	if (work_length != NANO_WORK_VALUE_LENGTH) {
+		Tcl_SetResult(interp, "Work size is wrong", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	if (objc == 4) {
+		/* XXX:TODO: Implement getting a uint64_t from Tcl */
+		Tcl_SetResult(interp, "User-supplied workMin is not implemented", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	int valid, result;
+
+	valid = nano_validate_work(blockhash, work, workMin);
+	if (valid) {
+		result = 1;
+	} else {
+		result = 0;
+	}
+
+	Tcl_SetObjResult(interp, Tcl_NewBooleanObj(result));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
+static int nano_tcl_generate_work(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	unsigned char *blockhash;
+	unsigned char work[NANO_WORK_VALUE_LENGTH];
+	uint64_t workMin = NANO_WORK_DEFAULT_MIN;
+	int blockhash_length;
+
+	if (objc < 2 || objc > 3) {
+		Tcl_WrongNumArgs(interp, 1, objv, "workBlockhash ?workMin?");
+
+		return(TCL_ERROR);
+	}
+
+	blockhash = Tcl_GetByteArrayFromObj(objv[1], &blockhash_length);
+	if (blockhash_length != NANO_BLOCK_HASH_LENGTH) {
+		Tcl_SetResult(interp, "Block hash size is wrong", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	if (objc == 3) {
+		/* XXX:TODO: Implement getting a uint64_t from Tcl */
+		Tcl_SetResult(interp, "User-supplied workMin is not implemented", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	nano_generate_work(blockhash, work, workMin);
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(work, sizeof(work)));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
 static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	if (objc != 1) {
 		Tcl_WrongNumArgs(interp, 1, objv, "");
@@ -361,6 +527,8 @@ int Nano_Init(Tcl_Interp *interp) {
 	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
+	Tcl_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work, NULL, NULL);
+	Tcl_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work, NULL, NULL);
 
 	if (interp) {
 		te_ret = Tcl_Eval(interp, nanoInitScript);

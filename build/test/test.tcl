@@ -217,6 +217,35 @@ proc test_blocks {} {
 	return true
 }
 
+proc test_work {} {
+	# Verification
+	## Positive
+	set blockhash "0CF7F1E71B6C692BD8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
+	set work      "01A87EEC1B6C692B"
+	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	if {!$verify} {
+		puts "\[1.FAIL\] Got: $verify"
+		puts "\[1.FAIL\] Exp: true"
+
+		return false
+	}
+
+	## Negative
+	set work      "11A87EEC1B6C692B"
+	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	if {$verify} {
+		puts "\[2.FAIL\] Got: $verify"
+		puts "\[2.FAIL\] Exp: false"
+
+		return false
+	}
+
+	# Generation
+	## XXX:TODO
+
+	return true
+}
+
 set tests {
 	selftest
 	signatures
@@ -224,6 +253,7 @@ set tests {
 	keygeneration
 	addressformat
 	blocks
+	work
 }
 
 foreach test $tests {
