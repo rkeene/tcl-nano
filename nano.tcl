@@ -730,5 +730,3 @@ proc ::nano::account::receiveAllPending {key} {
 
 	return $outBlocks
 }
-
-package provide nano 0

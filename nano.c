@@ -339,7 +339,7 @@ static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int obj
 }
 
 int Nano_Init(Tcl_Interp *interp) {
-	int te_ret;
+	int te_ret, tpp_ret;
 	const char nanoInitScript[] = {
 #include "nano.tcl.h"
 		0x00
@@ -367,6 +367,11 @@ int Nano_Init(Tcl_Interp *interp) {
 		if (te_ret != TCL_OK) {
 			return(te_ret);
 		}
+	}
+
+	tpp_ret = Tcl_PkgProvide(interp, "nano", PACKAGE_VERSION);
+	if (tpp_ret != TCL_OK) {
+		return(tpp_ret);
 	}
 
 	return(TCL_OK);
