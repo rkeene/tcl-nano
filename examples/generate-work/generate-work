@@ -1,0 +1,21 @@
+#! /usr/bin/env tclsh
+
+package require nano
+
+if {[llength $argv] == 0} {
+	puts stderr "Usage: generate-work <hash>..."
+
+	exit 1
+}
+
+foreach arg $argv {
+	if {[catch {
+		set work [::nano::internal::generateWork [binary decode hex $arg]]
+		set work [binary encode hex $work]
+		set work [string toupper $work]
+	} err]} {
+		puts stderr "Error generating work for \"$arg\": $err"
+	} else {
+		puts "WORK($arg) = $work"
+	}
+}
