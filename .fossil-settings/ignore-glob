@@ -6,6 +6,8 @@ tweetnacl.o
 nano.syms
 nano.tcl.h
 Makefile
+pkgIndex.tcl-shared
+pkgIndex.tcl-static
 pkgIndex.tcl
 aclocal.m4
 config.guess
