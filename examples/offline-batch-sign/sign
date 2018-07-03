@@ -1,0 +1,206 @@
+#! /usr/bin/env tclsh
+
+package require nano
+
+# Generate (derive) many accounts for every supplied seed to ensure we find
+# all pending balances
+set numAccountsPerSeed 500
+
+proc prompt {message var {default ""}} {
+	upvar $var data
+
+	puts -nonewline "${message}: "
+	flush stdout
+
+	gets stdin data
+	if {$data eq ""} {
+		set data $default
+	}
+
+	return $data
+}
+
+# Prompt the user for input
+puts "> Nano Offline Batch Sign"
+puts ">> Ultimate Destination"
+while true {
+	prompt "Nano Address" ultimateDestination
+	if {[catch {
+		set ultimateDestinationPubKey [::nano::address::toPublicKey $ultimateDestination -hex -verify]
+	} err]} {
+		puts "Error: $err"
+		continue
+	}
+	break
+}
+
+puts ">> Seeds (blank line when done)"
+while true {
+	prompt "Seed" seed
+	if {[string length $seed] == 0} {
+		break
+	}
+
+	if {[catch {
+		# Verify the seed
+		::nano::internal::generateKey [binary decode hex $seed] 0
+
+		lappend seeds $seed
+	} err]} {
+		puts "Error: $err"
+	}
+}
+set penultimateDestinationKey [::nano::internal::generateKey [binary decode hex [lindex $seeds 0]] 0]
+set penultimateDestination    [::nano::address::fromPrivateKey $penultimateDestinationKey]
+
+puts ">> Output File"
+while true {
+	prompt "Filename" outputFileName
+	set outputFileName [file normalize $outputFileName]
+	if {[catch {
+		set outputFD [open $outputFileName w]
+	} err]} {
+		puts "Error: $err"
+
+		continue
+	}
+
+	break
+}
+
+puts ">> Database File (Frontiers and Pending)"
+while true {
+	prompt "Filename" inputDBFileName
+	if {[catch {
+		set inputDBFD [open $inputDBFileName rb]
+		zlib push gunzip $inputDBFD
+	} err]} {
+		puts "Error: $err"
+
+		continue
+	}
+
+	break
+}
+
+puts ""
+puts ">> Summary"
+puts ">>> Destinations"
+puts ">>>> Penultimate Destination: $penultimateDestination"
+puts ">>>> Ultimate Destination:    $ultimateDestination"
+puts ">>> Derived keys:             $numAccountsPerSeed * [llength $seeds]"
+puts ">>> Output File:              $outputFileName"
+puts ">>> Database File:            $inputDBFileName"
+puts ""
+
+puts ">> Loading Database File"
+apply {{inputDBFD} {
+	while true {
+		gets $inputDBFD line
+		if {[eof $inputDBFD] && $line eq ""} {
+			break
+		}
+
+		set type [lindex $line 0]
+		set args [lrange $line 1 end]
+
+		switch -exact -- $type {
+			"pending" - "::nano::account::addPending" {
+				::nano::account::addPending {*}$args
+			}
+			"frontier" - "::nano::account::setFrontier" {
+				::nano::account::setFrontier {*}$args
+			}
+		}
+	}
+
+	close $inputDBFD
+}} $inputDBFD
+
+set keys [list]
+puts stderr ">> Generating [expr {[llength $seeds] * $numAccountsPerSeed}] keys"
+foreach seed $seeds {
+	set seed [binary decode hex $seed]
+	for {set index 0} {$index < $numAccountsPerSeed} {incr index} {
+		set key [::nano::internal::generateKey $seed $index]
+
+		set accountPubKeys($key) [::nano::key::publicKeyFromPrivateKey $key -hex]
+		lappend keys $key
+	}
+}
+
+puts stderr ">> Working"
+set resultingBlocks [list]
+set iteration 0
+puts -nonewline $outputFD "\["
+set firstBlock true
+while true {
+	incr iteration
+
+	set resultingBlocksCountBefore [llength $resultingBlocks]
+
+	set index -1
+	foreach key $keys {
+		incr index
+
+		set account [::nano::address::fromPrivateKey $key]
+
+		if {($index % 100) == 0} {
+			puts stderr ">>> $iteration/1/$index Processing $account"
+		}
+
+		foreach blockJSON [::nano::account::receiveAllPending $key $accountPubKeys($key)] {
+			lappend resultingBlocks $blockJSON
+			if {!$firstBlock} {
+				puts -nonewline $outputFD ","
+			}
+			puts -nonewline $outputFD "$blockJSON"
+			set firstBlock false
+		}
+	}
+
+	set index -1
+	foreach key $keys {
+		incr index
+
+		set account [::nano::address::fromPrivateKey $key]
+
+		if {($index % 100) == 0} {
+			puts ">>> $iteration/2/$index Processing $account"
+		}
+
+		set balance [::nano::account::getFrontier $account balance]
+		if {$balance == 0} {
+			continue
+		}
+
+		if {$account in [list $penultimateDestination $ultimateDestination]} {
+			continue
+		}
+
+		set blockJSON [::nano::account::send $account $penultimateDestination $balance $key]
+		if {!$firstBlock} {
+			puts -nonewline $outputFD ","
+		}
+		puts -nonewline $outputFD "$blockJSON"
+		set firstBlock false
+	}
+
+	set resultingBlocksCountAfter [llength $resultingBlocks]
+	if {$resultingBlocksCountBefore == $resultingBlocksCountAfter} {
+		break
+	}
+}
+
+if {[::nano::address::toPublicKey $penultimateDestination] ne [::nano::address::toPublicKey $ultimateDestination]} {
+	set balance [::nano::account::getFrontier $penultimateDestination balance]
+	set blockJSON [::nano::account::send $penultimateDestination $ultimateDestination $balance $penultimateDestinationKey]
+	if {!$firstBlock} {
+		puts -nonewline $outputFD ","
+	}
+	puts -nonewline $outputFD "$blockJSON"
+}
+
+puts $outputFD "\]"
+
+puts ">> Done !"
