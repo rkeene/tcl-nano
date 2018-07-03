@@ -241,7 +241,15 @@ proc test_work {} {
 	}
 
 	# Generation
-	## XXX:TODO
+	set blockhash "1C840FED01000000D8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
+	set work      [binary encode hex [::nano::internal::generateWork [binary decode hex $blockhash]]]
+	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	if {!$verify} {
+		puts "\[3.FAIL\] Got: $verify"
+		puts "\[3.FAIL\] Exp: true"
+
+		return false
+	}
 
 	return true
 }
