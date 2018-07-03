@@ -653,7 +653,7 @@ proc ::nano::account::getFrontier {account args} {
 proc ::nano::account::addPending {account blockHash amount} {
 	set accountPubKey [::nano::address::toPublicKey $account -hex]
 
-	set ::nano::account::pending([list $accountPubKey $blockHash]) [dict create amount $amount]
+	dict set ::nano::account::pending $accountPubKey $blockHash amount $amount
 }
 
 proc ::nano::account::receive {account blockHash signKey} {
@@ -662,8 +662,8 @@ proc ::nano::account::receive {account blockHash signKey} {
 	set frontierInfo [getFrontier $account]
 	dict with frontierInfo {}
 
-	set blockInfo $::nano::account::pending([list $accountPubKey $blockHash])
-	unset ::nano::account::pending([list $accountPubKey $blockHash])
+	set blockInfo [dict get $::nano::account::pending $accountPubKey $blockHash]
+	dict unset ::nano::account::pending $accountPubKey $blockHash
 
 	set amount [dict get $blockInfo amount]
 	set blockArgs [list to $account previousBalance $balance \
@@ -715,16 +715,21 @@ proc ::nano::account::send {fromAccount toAccount amount signKey} {
 	return $block
 }
 
-proc ::nano::account::receiveAllPending {key} {
+proc ::nano::account::receiveAllPending {key {accountPubKey ""}} {
 	set outBlocks [list]
 
-	set accountPubKey [::nano::key::publicKeyFromPrivateKey $key -hex]
+	if {$accountPubKey eq ""} {
+		set accountPubKey [::nano::key::publicKeyFromPrivateKey $key -hex]
+	}
+
+	if {![dict exists $::nano::account::pending $accountPubKey]} {
+		return $outBlocks
+	}
 
 	set signKey [binary encode hex $key]
 	set account [::nano::address::fromPublicKey $accountPubKey]
 
-	foreach accountPubKeyBlockHash [array names ::nano::account::pending [list $accountPubKey *]] {
-		set blockHash [lindex $accountPubKeyBlockHash 1]
+	foreach blockHash [dict keys [dict get $::nano::account::pending $accountPubKey]] {
 		lappend outBlocks [receive $account $blockHash $signKey]
 	}
 
