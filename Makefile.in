@@ -2,11 +2,21 @@ CC            := @CC@
 AR            := @AR@
 RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@
+CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
+VPATH         := @srcdir@
 srcdir        := @srcdir@
+prefix        := @prefix@
+exec_prefix   := @exec_prefix@
+libdir        := @libdir@
+PACKAGE_VERSION     := @PACKAGE_VERSION@
+TCL_PACKAGE_PATH    := @TCL_PACKAGE_PATH@
+PACKAGE_INSTALL_DIR := $(TCL_PACKAGE_PATH)/tcl-nano$(PACKAGE_VERSION)
+INSTALL             := @INSTALL@
+INSTALL_PROGRAM     := @INSTALL_PROGRAM@
+INSTALL_DATA        := @INSTALL_DATA@
 export CC CFLAGS CPPFLAGS
 
 all: @EXTENSION_TARGET@ pkgIndex.tcl
@@ -46,6 +56,11 @@ blake2b.o: @srcdir@/blake2b/blake2b.c @srcdir@/blake2b/blake2.h @srcdir@/blake2b
 test: @EXTENSION_TARGET@
 	@srcdir@/build/test/test.tcl .
 
+install: @EXTENSION_TARGET@ pkgIndex.tcl
+	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
+	$(INSTALL_PROGRAM) @EXTENSION_TARGET@ '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
+	$(INSTALL_DATA)    pkgIndex.tcl '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
+ 
 clean:
 	rm -f @EXTENSION_TARGET@ nano.o
 	rm -f blake2b.o tweetnacl.o randombytes.o
