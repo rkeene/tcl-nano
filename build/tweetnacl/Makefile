@@ -1,3 +1,5 @@
+PREFIX := $(shell pwd)/INST
+
 all: out/tweetnacl.c out/tweetnacl.h
 
 tweetnacl.h.new: src/tweetnacl.h
@@ -21,6 +23,10 @@ out/tweetnacl.c: tweetnacl.c.new tweetnacl.h.new patches/tweetnacl-ed25519blake2
 out/tweetnacl.h: out/tweetnacl.c
 	mv tweetnacl.h out
 
+install: out/tweetnacl.c out/tweetnacl.h
+	mkdir -p '$(PREFIX)'
+	cp out/tweetnacl.c out/tweetnacl.h '$(PREFIX)'
+
 clean:
 	rm -f tweetnacl.c.new.orig tweetnacl.h.new.orig
 	rm -f tweetnacl.h.new tweetnacl.h
@@ -30,4 +36,4 @@ clean:
 
 distclean: clean
 
-.PHONY: all clean distclean
+.PHONY: all install clean distclean

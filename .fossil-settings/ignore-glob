@@ -18,7 +18,9 @@ config.log
 config.status
 tweetnacl
 build/tweetnacl/out
+build/tweetnacl/INST
 blake2b
 build/blake2b/out
+build/blake2b/INST
 build/work
 build/tcl
