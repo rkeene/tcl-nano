@@ -11,12 +11,6 @@ namespace eval ::nano::block::create {}
 namespace eval ::nano::work {}
 namespace eval ::nano::account {}
 
-set ::nano::block::hashLength 32
-set ::nano::block::signatureLength 64
-set ::nano::key::publicKeyLength 32
-set ::nano::key::privateKeyLength 32
-set ::nano::key::seedLength 32
-
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
 proc ::nano::address::toPublicKey {address args} {
 	set performChecksumCheck false

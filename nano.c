@@ -12,11 +12,42 @@
 #define NANO_SECRET_KEY_LENGTH (crypto_sign_SECRETKEYBYTES - crypto_sign_PUBLICKEYBYTES)
 #define NANO_PUBLIC_KEY_LENGTH (crypto_sign_PUBLICKEYBYTES)
 #define NANO_BLOCK_HASH_LENGTH 32
+#define NANO_BLOCK_SIGNATURE_LENGTH crypto_sign_BYTES
 #define NANO_WORK_VALUE_LENGTH 8
 #define NANO_WORK_HASH_LENGTH  8
 #define NANO_WORK_DEFAULT_MIN  0xffffffc000000000LLU
+
 #define TclNano_AttemptAlloc(x) ((void *) Tcl_AttemptAlloc(x))
 #define TclNano_Free(x) Tcl_Free((char *) x)
+#define TclNano_SetIntVar(interp, name, intValue) \
+	tclobj_ret = Tcl_SetVar2Ex(interp, name, NULL, Tcl_NewIntObj(intValue), TCL_GLOBAL_ONLY | TCL_LEAVE_ERR_MSG); \
+	if (!tclobj_ret) { \
+		return(TCL_ERROR); \
+	}
+
+#define TclNano_CreateNamespace(interp, name) \
+	tclobj_ret = Tcl_CreateNamespace(interp, name, NULL, NULL); \
+	if (!tclobj_ret) { \
+		return(TCL_ERROR); \
+	}
+
+#define TclNano_CreateObjCommand(interp, name, functionName) \
+	tclobj_ret = Tcl_CreateObjCommand(interp, name, functionName, NULL, NULL); \
+	if (!tclobj_ret) { \
+		return(TCL_ERROR); \
+	}
+
+#define TclNano_Eval(interp, script) \
+	tclcmd_ret = Tcl_Eval(interp, script); \
+	if (tclcmd_ret != TCL_OK) { \
+		return(tclcmd_ret); \
+	}
+
+#define TclNano_PkgProvide(interp, name, version) \
+	tclcmd_ret = Tcl_PkgProvide(interp, name, version); \
+	if (tclcmd_ret != TCL_OK) { \
+		return(tclcmd_ret); \
+	}
 
 static unsigned char *nano_parse_secret_key(Tcl_Obj *secret_key_only_obj, int *out_key_length) {
 	unsigned char *secret_key, *public_key, *secret_key_only;
@@ -177,7 +208,7 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 	}
 
 	data = Tcl_GetByteArrayFromObj(objv[1], &data_length);
-	signature_length = data_length + crypto_sign_BYTES;
+	signature_length = data_length + NANO_BLOCK_SIGNATURE_LENGTH;
 	if (signature_length >= UINT_MAX) {
 		Tcl_SetResult(interp, "Input message too long", NULL);
 
@@ -210,7 +241,7 @@ static int nano_tcl_sign_detached(ClientData clientData, Tcl_Interp *interp, int
 		return(TCL_ERROR);
 	}
 
-	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(signature, crypto_sign_BYTES));
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(signature, NANO_BLOCK_SIGNATURE_LENGTH));
 
 	TclNano_Free(signature);
 	TclNano_Free(secret_key);
@@ -236,7 +267,7 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 
 	data = Tcl_GetByteArrayFromObj(objv[1], &data_length);
 	signature = Tcl_GetByteArrayFromObj(objv[2], &signature_length);
-	if (signature_length != crypto_sign_BYTES) {
+	if (signature_length != NANO_BLOCK_SIGNATURE_LENGTH) {
 		Tcl_SetResult(interp, "Signature is not the right size", NULL);
 
 		return(TCL_ERROR);
@@ -289,7 +320,7 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 }
 
 static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
-	unsigned char *data, result[crypto_sign_BYTES];
+	unsigned char *data, result[NANO_BLOCK_SIGNATURE_LENGTH];
 	int tgifo_ret;
 	int data_length, result_length;
 
@@ -318,7 +349,7 @@ static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int obj
 		 * Default to the same as the cryptographic primitive
 		 */
 		crypto_hash(result, data, data_length);
-		result_length = crypto_sign_BYTES;
+		result_length = NANO_BLOCK_SIGNATURE_LENGTH;
 	}
 
 	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, result_length));
@@ -505,7 +536,8 @@ static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int obj
 }
 
 int Nano_Init(Tcl_Interp *interp) {
-	int te_ret, tpp_ret;
+	void *tclobj_ret;
+	int tclcmd_ret;
 	const char nanoInitScript[] = {
 #include "nano.tcl.h"
 		0x00
@@ -520,27 +552,36 @@ int Nano_Init(Tcl_Interp *interp) {
 	}
 #endif
 
-	Tcl_CreateObjCommand(interp, "::nano::internal::selfTest", nano_tcl_self_test, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::generateSeed", nano_tcl_generate_seed, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work, NULL, NULL);
-
-	if (interp) {
-		te_ret = Tcl_Eval(interp, nanoInitScript);
-		if (te_ret != TCL_OK) {
-			return(te_ret);
-		}
+	if (!interp) {
+		return(TCL_OK);
 	}
 
-	tpp_ret = Tcl_PkgProvide(interp, "nano", PACKAGE_VERSION);
-	if (tpp_ret != TCL_OK) {
-		return(tpp_ret);
-	}
+	TclNano_CreateNamespace(interp, "::nano");
+	TclNano_CreateNamespace(interp, "::nano::block");
+	TclNano_CreateNamespace(interp, "::nano::key");
+	TclNano_CreateNamespace(interp, "::nano::work");
+
+	TclNano_SetIntVar(interp, "::nano::block::hashLength", NANO_BLOCK_HASH_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::block::signatureLength", NANO_BLOCK_SIGNATURE_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::key::publicKeyLength", NANO_PUBLIC_KEY_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::key::privateKeyLength", NANO_SECRET_KEY_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::key::seedLength", NANO_SECRET_KEY_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::work::workValueLength", NANO_WORK_VALUE_LENGTH);
+	TclNano_SetIntVar(interp, "::nano::work::workHashLength", NANO_WORK_HASH_LENGTH);
+
+	TclNano_CreateObjCommand(interp, "::nano::internal::selfTest", nano_tcl_self_test);
+	TclNano_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair);
+	TclNano_CreateObjCommand(interp, "::nano::internal::generateSeed", nano_tcl_generate_seed);
+	TclNano_CreateObjCommand(interp, "::nano::internal::publicKey", nano_tcl_secret_key_to_public_key);
+	TclNano_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached);
+	TclNano_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached);
+	TclNano_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data);
+	TclNano_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work);
+	TclNano_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work);
+
+	TclNano_Eval(interp, nanoInitScript);
+
+	TclNano_PkgProvide(interp, "nano", PACKAGE_VERSION);
 
 	return(TCL_OK);
 }
