@@ -4,6 +4,7 @@ randombytes.o
 blake2b.o
 tweetnacl.o
 nano.syms
+nano.vers
 nano.tcl.h
 Makefile
 pkgIndex.tcl-shared

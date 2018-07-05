@@ -1,5 +1,7 @@
 #! /usr/bin/env bash
 
+set -e
+
 update='0'
 if [ "$1" = '-update' ]; then
 	update='1'
@@ -32,7 +34,7 @@ fi
 
 cd "$(dirname "$(which "$0")")" || exit 1
 
-mkdir aclocal >/dev/null 2>/dev/null
+mkdir aclocal >/dev/null 2>/dev/null || :
 
 files=()
 
@@ -67,7 +69,7 @@ else
 	mv aclocal.m4.new aclocal.m4
 fi
 
-automake --add-missing --copy --force-missing >/dev/null 2>/dev/null
+automake --add-missing --copy --force-missing >/dev/null 2>/dev/null || :
 if ! [ -f install-sh -o -f install.sh -o -f shtool ]; then
 	echo "automake failed" >&2
 	exit 1
@@ -77,8 +79,6 @@ autoconf
 
 rm -rf autom4te.cache
 
-set -e
-
 # Assemble tweetnacl
 rm -rf tweetnacl
 make -C build/tweetnacl install PREFIX="$(pwd)/tweetnacl"
@@ -86,3 +86,15 @@ make -C build/tweetnacl install PREFIX="$(pwd)/tweetnacl"
 # Assemble blake2b
 rm -rf blake2b
 make -C build/blake2b install PREFIX="$(pwd)/blake2b"
+
+# Assemble version script
+rm -f nano.vers
+(
+	echo '{'
+	echo $'\tglobal:'
+	sed 's/@SYMPREFIX@/\t\t/g;s/$/;/' nano.syms.in
+	echo $'\tlocal:'
+	echo $'\t\t*;'
+	echo '};'
+) > nano.vers
+
