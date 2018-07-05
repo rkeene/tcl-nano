@@ -134,7 +134,7 @@ proc test_addressformat {} {
 		return false
 	}
 
-	set addrCheck [::nano::address::fromPublicKey $pub]
+	set addrCheck [::nano::address::fromPublicKey $pub -nano]
 	if {$addrCheck ne $addr} {
 		puts "\[2.FAIL\] Got: $addrCheck"
 		puts "\[2.FAIL\] Exp: $addr"
