@@ -85,7 +85,7 @@ proc ::nano::address::toPublicKey {address args} {
 }
 
 proc ::nano::address::fromPublicKey {pubKey args} {
-	set addressPrefix "xrb_"
+	set addressPrefix "nano_"
 	foreach arg $args {
 		switch -exact -- $arg {
 			"-xrb" {
