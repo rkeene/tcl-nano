@@ -1,16 +1,30 @@
+#include <limits.h>
+#include <tcl.h>
+
 #include "randombytes.h"
 
-#if defined(HAVE_GETRANDOM)
-#  ifdef HAVE_SYS_RANDOM_H
-#    include <sys/random.h>
-#  endif
+long long getrandom_impl(void *buf, unsigned int buflen);
+void randombytes(unsigned char *buffer, unsigned long long length) {
+	long long gr_ret;
+	int errorCount = 0;
 
-void randombytes(uint8_t *buffer, uint64_t length) {
-	ssize_t gr_ret;
+	if (length > UINT_MAX || length > LONG_LONG_MAX) {
+		Tcl_Panic("Buffer length is too large");
+	}
 
 	while (length > 0) {
-		gr_ret = getrandom(buffer, length, 0);
-		if (gr_ret <= 0) {
+		gr_ret = getrandom_impl(buffer, length);
+
+		if (gr_ret < 0) {
+			errorCount++;
+			if (errorCount > 10) {
+				Tcl_Panic("Unable to generate random numbers");
+			}
+			continue;
+		}
+		errorCount = 0;
+
+		if (gr_ret == 0) {
 			continue;
 		}
 
@@ -20,63 +34,42 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 
 	return;
 }
+
+#if defined(HAVE_GETRANDOM)
+#  ifdef HAVE_SYS_RANDOM_H
+#    include <sys/random.h>
+#  endif
+
+long long getrandom_impl(void *buf, unsigned int buflen) {
+	ssize_t gr_ret;
+
+	gr_ret = getrandom(buf, buflen, 0);
+
+	return(gr_ret);
+}
+
 #elif defined(HAVE_GETENTROPY)
-void randombytes(uint8_t *buffer, uint64_t length) {
+#include <unistd.h>
+
+long long getrandom_impl(void *buf, unsigned int buflen) {
 	int ge_ret;
-	int current_length;
 
-	while (length > 0) {
-		current_length = length;
-		if (current_length > 256) {
-			current_length = 256;
-		}
-
-		ge_ret = getentropy(buffer, current_length);
-		if (ge_ret != 0) {
-			continue;
-		}
-
-		buffer += current_length;
-		length -= current_length;
+	if (buflen > 255) {
+		buflen = 255;
 	}
 
-	return;
+	ge_ret = getentropy(buf, buflen);
+	if (ge_ret != 0) {
+		return(-1);
+	}
+
+	return(buflen);
 }
-#elif 1
+#elif defined(HAVE_CRYPTGENRANDOM) && 0
 #include <tcl.h>
-
-void randombytes(uint8_t *buffer, uint64_t length) {
-
-	Tcl_Panic("Random data is not available");
-
-#if 0
-	Tcl_Channel fd;
-
-	fd = Tcl_FSOpenFileChannel(NULL, Tcl_NewStringObj("/dev/urandom", -1), "rb", 0644);
-	if (!fd) {
-		Tcl_Panic("Unable to get random data");
-	}
-
-	while (length > 0) {
-		read_ret = Tcl_ReadChars(fd, buffer, length);
-		if (read_ret <= 0) {
-			continue;
-		}
-
-		buffer += read_ret;
-		length -= read_ret;
-	}
-
-	Tcl_Close(fd);
-#endif
-
-	return;
-
-	/* NOTREACH */
-	buffer = buffer;
-	length = length;
+long long getrandom_impl(void *buf, unsigned int buflen) {
+	Tcl_Panic("Incomplete CryptGenRandom");
 }
-
 #else
 #  ifdef HAVE_SYS_TYPES_H
 #    include <sys/types.h>
@@ -90,25 +83,30 @@ void randombytes(uint8_t *buffer, uint64_t length) {
 # ifdef HAVE_UNISTD_H
 #    include <unistd.h>
 # endif
-void randombytes(uint8_t *buffer, uint64_t length) {
+long long getrandom_impl(void *buf, unsigned int buflen) {
 	ssize_t read_ret;
+	long long retval;
 	int fd = -1;
 
-	while (fd < 0) {
-		fd = open("/dev/urandom", O_RDONLY);
+	fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0) {
+		return(-1);
 	}
 
-	while (length > 0) {
-		read_ret = read(fd, buffer, length);
+	retval = 0;
+	while (buflen > 0) {
+		read_ret = read(fd, buf, buflen);
 		if (read_ret <= 0) {
 			continue;
 		}
 
-		buffer += read_ret;
-		length -= read_ret;
+		buf    += read_ret;
+		retval += read_ret;
+		buflen -= read_ret;
 	}
 
 	close(fd);
-	return;
+
+	return(retval);
 }
 #endif

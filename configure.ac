@@ -55,6 +55,7 @@ AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="-Wall $CFLAGS"])
 AX_CHECK_COMPILE_FLAG([-W], [
 	CFLAGS="-W $CFLAGS"
 	AX_CHECK_COMPILE_FLAG([-Wno-self-assign], [CFLAGS="$CFLAGS -Wno-self-assign"])
+	AX_CHECK_COMPILE_FLAG([-Wno-tautological-constant-out-of-range-compare], [CFLAGS="$CFLAGS -Wno-tautological-constant-out-of-range-compare"])
 ])
 
 dnl Enable hardening
