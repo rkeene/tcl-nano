@@ -8,6 +8,7 @@ namespace eval ::nano::address {}
 namespace eval ::nano::key {}
 namespace eval ::nano::block {}
 namespace eval ::nano::block::create {}
+namespace eval ::nano::work {}
 namespace eval ::nano::account {}
 
 set ::nano::block::hashLength 32
@@ -373,7 +374,7 @@ proc ::nano::block::_dictToJSON {blockDict} {
 
 	set blockJSONFields {
 		type account source destination previous representative balance
-		link link_as_account _blockHash _workHash signature _comment
+		link link_as_account _blockHash _workHash work signature _comment
 	}
 
 	set blockJSONEntries [lmap field $blockJSONFields {
@@ -629,6 +630,42 @@ proc ::nano::block::create::setRepresentative {args} {
 	}
 
 	tailcall ::nano::block::jsonFromDict $blockDict
+}
+
+proc ::nano::work::fromBlockhash {blockhash} {
+	if {[string length $blockhash] != 32} {
+		set blockhash [binary decode hex $blockhash]
+	}
+
+	set work [binary encode hex [::nano::internal::generateWork $blockhash]]
+	set work [string tolower $work]
+	return $work
+}
+
+proc ::nano::work::fromBlock {blockJSON} {
+	set blockDict [::json::json2dict $blockJSON]
+	set workhash [dict get $blockDict _workHash]
+	tailcall ::nano::work::fromBlockhash $workhash
+}
+
+proc ::nano::work::updateBlock {blockJSON} {
+	set blockDict [::json::json2dict $blockJSON]
+	set workhash [dict get $blockDict _workHash]
+	set work [::nano::work::fromBlockhash $workhash]
+	dict set blockDict work $work
+	tailcall ::nano::block::_dictToJSON $blockDict
+}
+
+proc ::nano::work::validate {blockhash work} {
+	if {[string length $blockhash] != 32} {
+		set blockhash [binary decode hex $blockhash]
+	}
+
+	if {[string length $work] != 8} {
+		set work [binary decode hex $work]
+	}
+
+	tailcall ::nano::internal::validateWork $blockhash $work
 }
 
 # -- Tracked accounts --

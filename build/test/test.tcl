@@ -222,7 +222,7 @@ proc test_work {} {
 	## Positive
 	set blockhash "0CF7F1E71B6C692BD8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
 	set work      "01A87EEC1B6C692B"
-	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	set verify [::nano::work::validate $blockhash $work]
 	if {!$verify} {
 		puts "\[1.FAIL\] Got: $verify"
 		puts "\[1.FAIL\] Exp: true"
@@ -232,7 +232,7 @@ proc test_work {} {
 
 	## Negative
 	set work      "11A87EEC1B6C692B"
-	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	set verify [::nano::work::validate $blockhash $work]
 	if {$verify} {
 		puts "\[2.FAIL\] Got: $verify"
 		puts "\[2.FAIL\] Exp: false"
@@ -242,8 +242,8 @@ proc test_work {} {
 
 	# Generation
 	set blockhash "1C840FED01000000D8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
-	set work      [binary encode hex [::nano::internal::generateWork [binary decode hex $blockhash]]]
-	set verify [::nano::internal::validateWork [binary decode hex $blockhash] [binary decode hex $work]]
+	set work      [::nano::work::fromBlockhash $blockhash]
+	set verify    [::nano::work::validate $blockhash $work]
 	if {!$verify} {
 		puts "\[3.FAIL\] Got: $verify"
 		puts "\[3.FAIL\] Exp: true"

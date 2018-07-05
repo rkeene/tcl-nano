@@ -10,9 +10,7 @@ if {[llength $argv] == 0} {
 
 foreach arg $argv {
 	if {[catch {
-		set work [::nano::internal::generateWork [binary decode hex $arg]]
-		set work [binary encode hex $work]
-		set work [string toupper $work]
+		set work [::nano::work::fromBlockhash $arg]
 	} err]} {
 		puts stderr "Error generating work for \"$arg\": $err"
 	} else {
