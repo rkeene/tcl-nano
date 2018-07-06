@@ -329,7 +329,7 @@ proc ::nano::block::json::fromDict {blockDict} {
 
 	set blockJSONFields {
 		type account source destination previous representative balance
-		link link_as_account _blockHash _workHash work signature _comment
+		link link_as_account _blockHash _workData work signature _comment
 	}
 
 	set blockJSONEntries [lmap field $blockJSONFields {
@@ -338,7 +338,7 @@ proc ::nano::block::json::fromDict {blockDict} {
 		}
 
 		switch -exact -- $field {
-			"source" - "previous" - "link" - "_blockHash" - "_workHash" {
+			"source" - "previous" - "link" - "_blockHash" - "_workData" {
 				if {[string length $block($field)] == $::nano::block::hashLength} {
 					set block($field) [binary encode hex $block($field)]
 				}
@@ -705,9 +705,9 @@ proc ::nano::block::dict::work {blockDict args} {
 
 	set blockDict [_addBlockHash $blockDict]
 
-	set blockHash [dict get $blockDict _blockHash]
+	set blockHash [dict get $blockDict _workData]
 
-	set work [::nano::work::fromBlockHash $blockHash -binary]
+	set work [::nano::work::fromWorkData $blockHash -binary]
 
 	if {$outputMode eq "work"} {
 		if {$outputFormat eq "hex"} {
@@ -755,7 +755,7 @@ proc ::nano::block::json::work {blockJSON args} {
 proc ::nano::block::dict::validateWork {blockDict} {
 	set blockDict [_addBlockHash $blockDict]
 
-	set blockHash [dict get $blockDict _blockHash]
+	set blockHash [dict get $blockDict _workData]
 	set work      [dict get $blockDict work]
 
 	tailcall ::nano::work::validate $blockHash $work
@@ -785,7 +785,7 @@ proc ::nano::block::create::send {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link_as_account" $block(to) \
-		"_workHash" $block(previous) \
+		"_workData" $block(previous) \
 		"_comment" "Send $block(amount) raw from $block(from) to $block(to)" \
 	]
 
@@ -814,9 +814,9 @@ proc ::nano::block::create::receive {args} {
 	if {![info exists block(previous)]} {
 		set block(previous) "0000000000000000000000000000000000000000000000000000000000000000"
 		set block(previousBalance) 0
-		set block(_workHash) [::nano::address::toPublicKey $block(to) -hex]
+		set block(_workData) [::nano::address::toPublicKey $block(to) -hex]
 	} else {
-		set block(_workHash) $block(previous)
+		set block(_workData) $block(previous)
 	}
 
 	set block(balance) [expr {$block(previousBalance) + $block(amount)}]
@@ -828,7 +828,7 @@ proc ::nano::block::create::receive {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link" $block(sourceBlock) \
-		"_workHash" $block(_workHash) \
+		"_workData" $block(_workData) \
 		"_comment" "Receive $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
 	]
 
@@ -858,7 +858,7 @@ proc ::nano::block::create::setRepresentative {args} {
 		"representative" $block(representative) \
 		"balance" $block(balance) \
 		"link" $block(link) \
-		"_workHash" $block(previous) \
+		"_workData" $block(previous) \
 	]
 
 	if {[info exists block(signKey)]} {
@@ -877,33 +877,34 @@ proc ::nano::block::create::setRepresentative {args} {
 }
 
 # Work generation functions
-proc ::nano::work::fromBlockHash {blockHash} {
-	if {[string length $blockHash] != $::nano::block::hashLength} {
-		set blockHash [binary decode hex $blockHash]
+proc ::nano::work::fromWorkData {blockHashOrPublicKey} {
+	if {[string length $blockHashOrPublicKey] != $::nano::block::hashLength} {
+		set blockHashOrPublicKey [binary decode hex $blockHashOrPublicKey]
 	}
 
-	set work [binary encode hex [::nano::internal::generateWork $blockHash]]
+	set work [binary encode hex [::nano::internal::generateWork $blockHashOrPublicKey]]
 	set work [string tolower $work]
 
 	return $work
 }
 
 proc ::nano::work::fromBlock {blockData} {
-	set blockHash [::nano::block::hash $blockData -binary]
+	set blockDict [::nano::block::dict::fromBlock $blockData]
+	set workData  [dict get $blockDict _workData]
 
-	tailcall ::nano::work::fromBlockhash $blockHash
+	tailcall ::nano::work::fromBlockhash $workData
 }
 
-proc ::nano::work::validate {blockHash work} {
-	if {[string length $blockHash] != $::nano::block::hashLength} {
-		set blockHash [binary decode hex $blockHash]
+proc ::nano::work::validate {workData work} {
+	if {[string length $workData] != $::nano::block::hashLength} {
+		set workData [binary decode hex $workData]
 	}
 
 	if {[string length $work] != $::nano::work::workValueLength} {
 		set work [binary decode hex $work]
 	}
 
-	tailcall ::nano::internal::validateWork $blockHash $work
+	tailcall ::nano::internal::validateWork $workData $work
 }
 
 # High level account management

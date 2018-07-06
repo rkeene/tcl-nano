@@ -1,5 +1,6 @@
 #! /usr/bin/env tclsh
 
+lappend auto_path ../../build/work
 package require nano
 
 if {[llength $argv] == 0} {
@@ -10,7 +11,7 @@ if {[llength $argv] == 0} {
 
 foreach arg $argv {
 	if {[catch {
-		set work [::nano::work::fromBlockHash $arg]
+		set work [::nano::work::fromWorkData $arg]
 	} err]} {
 		puts stderr "Error generating work for \"$arg\": $err"
 	} else {

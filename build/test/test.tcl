@@ -241,9 +241,9 @@ proc test_work {} {
 	}
 
 	# Generation
-	set blockhash "1C840FED01000000D8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
-	set work      [::nano::work::fromBlockHash $blockhash]
-	set verify    [::nano::work::validate $blockhash $work]
+	set workData  "1C840FED01000000D8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
+	set work      [::nano::work::fromWorkData $workData]
+	set verify    [::nano::work::validate $workData $work]
 	if {!$verify} {
 		puts "\[3.FAIL\] Got: $verify"
 		puts "\[3.FAIL\] Exp: true"

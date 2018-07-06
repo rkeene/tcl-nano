@@ -38,12 +38,15 @@ Low-level Block
 ::nano::block::create::receive args                                         ->  blockJSON|blockDict
 ::nano::block::create::setRepresentative args                               ->  blockJSON|blockDict
 
-::nano::work::fromBlockHash blockHash                                       ->  work
+# Work Generation
+::nano::work::fromWorkData blockHashOrPublicKey                             ->  work
 ::nano::work::fromBlock blockData                                           ->  work
-::nano::work::validate blockHash work                                       ->  boolean
+::nano::work::validate workData work                                        ->  boolean
 
+# High Level Account
 :nano::account::setFrontier account frontierHash balance representative    ->  nil
-:nano::account::getFrontier account args                                   ->  frontierInfo
+:nano::account::getFrontier account                                        ->  frontierInfo
+:nano::account::getFrontier account ?frontierHash|balance|representative?  ->  frontierHash|balance|representative
 :nano::account::addPending account blockHash amount                        ->  nil
 :nano::account::receive account blockHash privateKey                       ->  blockJSON|blockDict
 :nano::account::send fromAccount toAccount amount privateKey               ->  blockJSON|blockDict
