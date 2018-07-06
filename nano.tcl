@@ -7,11 +7,17 @@ namespace eval ::nano {}
 namespace eval ::nano::address {}
 namespace eval ::nano::key {}
 namespace eval ::nano::block {}
+namespace eval ::nano::block::json {}
+namespace eval ::nano::block::dict {}
 namespace eval ::nano::block::create {}
 namespace eval ::nano::work {}
 namespace eval ::nano::account {}
 
+# Constants
+set ::nano::block::stateBlockPreamble [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
+
+# Address management functions
 proc ::nano::address::toPublicKey {address args} {
 	set performChecksumCheck false
 	set outputFormat "bytes"
@@ -84,7 +90,7 @@ proc ::nano::address::toPublicKey {address args} {
 	return $result
 }
 
-proc ::nano::address::fromPublicKey {pubKey args} {
+proc ::nano::address::fromPublicKey {publicKey args} {
 	set addressPrefix "nano_"
 	foreach arg $args {
 		switch -exact -- $arg {
@@ -94,44 +100,26 @@ proc ::nano::address::fromPublicKey {pubKey args} {
 			"-nano" {
 				set addressPrefix "nano_"
 			}
-			"-hex" {
-				set inputFormat "hex"
-			}
-			"-binary" {
-				set inputFormat "bytes"
-			}
 			default {
 				return -code error "Invalid option: $arg"
 			}
 		}
 	}
 
-	if {![info exists inputFormat]} {
-		if {[string length $pubKey] == $::nano::key::publicKeyLength} {
-			set inputFormat "bytes"
-		} else {
-			set inputFormat "hex"
-		}
+	if {[string length $publicKey] != $::nano::key::publicKeyLength} {
+		set publicKey [binary decode hex $publicKey]
 	}
 
-	if {$inputFormat eq "hex"} {
-		set pubKey [binary decode hex $pubKey]
-	}
+	set checksum [string reverse [::nano::internal::hashData $publicKey 5]]
+	append publicKey $checksum
 
-	if {[string length $pubKey] != $::nano::key::publicKeyLength} {
-		return -code error "Invalid key (length)"
-	}
-
-	set checksum [string reverse [::nano::internal::hashData $pubKey 5]]
-	append pubKey $checksum
-
-	set pubKey [binary encode hex $pubKey]
-	set pubKey [expr "0x$pubKey"]
+	set publicKey [binary encode hex $publicKey]
+	set publicKey [expr "0x$publicKey"]
 	set alphabet [split $::nano::address::base32alphabet ""]
 	set address ""
 	for {set index 0} {$index < 60} {incr index} {
-		set fiveBits [expr {$pubKey & 0x1F}]
-		set pubKey [expr {$pubKey >> 5}]
+		set fiveBits [expr {$publicKey & 0x1F}]
+		set publicKey [expr {$publicKey >> 5}]
 		set byte [lindex $alphabet $fiveBits]
 		append address $byte
 	}
@@ -141,20 +129,63 @@ proc ::nano::address::fromPublicKey {pubKey args} {
 	return $address
 }
 
-proc ::nano::address::fromPrivateKey {key args} {
-	set pubKey [::nano::key::publicKeyFromPrivateKey $key]
+proc ::nano::address::fromPrivateKey {privateKey args} {
+	set pubKey [::nano::key::publicKeyFromPrivateKey $privateKey]
 	tailcall ::nano::address::fromPublicKey $pubKey {*}$args
 }
 
-proc ::nano::key::generateNewSeed {} {
-	tailcall ::nano::internal::generateSeed
+# Key management functions
+proc ::nano::key::newSeed {args} {
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set retval [::nano::internal::generateSeed]
+
+	if {$outputFormat eq "hex"} {
+		set retval [binary encode hex $retval]
+	}
+
+	return $retval
 }
 
-proc ::nano::key::generateNewKey {} {
-	tailcall ::nano::internal::generateKey
+proc ::nano::key::newKey {args} {
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set retval [::nano::internal::generateKey]
+
+	if {$outputFormat eq "hex"} {
+		set retval [binary encode hex $retval]
+	}
+
+	return $retval
 }
 
-proc ::nano::key::computeKey {seed args} {
+proc ::nano::key::fromSeed {seed args} {
 	set index 0
 	set outputFormat "bytes"
 	if {[llength $args] > 0} {
@@ -189,7 +220,7 @@ proc ::nano::key::computeKey {seed args} {
 	return $key
 }
 
-proc ::nano::key::publicKeyFromPrivateKey {key args} {
+proc ::nano::key::publicKeyFromPrivateKey {privateKey args} {
 	set outputFormat "bytes"
 	foreach arg $args {
 		switch -- $arg {
@@ -205,11 +236,11 @@ proc ::nano::key::publicKeyFromPrivateKey {key args} {
 		}
 	}
 
-	if {[string length $key] != $::nano::key::privateKeyLength} {
-		set key [binary decode hex $key]
+	if {[string length $privateKey] != $::nano::key::privateKeyLength} {
+		set privateKey [binary decode hex $privateKey]
 	}
 
-	set pubKey [::nano::internal::publicKey $key]
+	set pubKey [::nano::internal::publicKey $privateKey]
 	if {$outputFormat eq "hex"} {
 		set pubKey [string toupper [binary encode hex $pubKey]]
 	}
@@ -217,13 +248,13 @@ proc ::nano::key::publicKeyFromPrivateKey {key args} {
 	return $pubKey
 }
 
-proc ::nano::block::fromJSON {json} {
-	array set block [json::json2dict $json]
+# Low-level block management
+proc ::nano::block::dict::toBlock {blockDict} {
+	array set block $blockDict
 
 	switch -- $block(type) {
 		"state" {
-			# XXX:TODO: Find the source of this
-			append blockData [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
+			append blockData $::nano::block::stateBlockPreamble
 			append blockData [::nano::address::toPublicKey $block(account)]
 			append blockData [binary decode hex $block(previous)]
 			append blockData [::nano::address::toPublicKey $block(representative)]
@@ -260,93 +291,23 @@ proc ::nano::block::fromJSON {json} {
 	return $blockData
 }
 
-proc ::nano::block::signBlockHash {blockHash key args} {
-	set outputFormat "bytes"
-	foreach arg $args {
-		switch -exact -- $arg {
-			"-hex" {
-				set outputFormat "hex"
-			}
-			"-binary" {
-				set outputFormat "bytes"
-			}
-		}
-	}
-
-	if {[string length $blockHash] != $::nano::block::hashLength} {
-		set blockHash [binary decode hex $blockHash]
-	}
-
-	if {[string length $key] != $::nano::key::privateKeyLength} {
-		set key [binary decode hex $key]
-	}
-
-	set signature [::nano::internal::signDetached $blockHash $key]
-
-	if {$outputFormat eq "hex"} {
-		set signature [string toupper [binary encode hex $signature]]
-	}
-
-	return $signature
+proc ::nano::block::json::toBlock {blockJSON} {
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+	tailcall ::nano::block::dict::toBlock $blockDict
 }
 
-proc ::nano::block::signBlock {blockData args} {
-	set blockHash [::nano::block::hash $blockData]
-
-	tailcall ::nano::block::signBlockHash $blockHash {*}$args
+proc ::nano::block::dict::fromJSON {blockJSON} {
+	tailcall ::json::json2dict $blockJSON
 }
 
-proc ::nano::block::signBlockJSON {blockJSON args} {
-	set blockData [::nano::block::fromJSON $blockJSON]
-
-	tailcall ::nano::block::signBlock $blockData {*}$args
-}
-
-proc ::nano::block::verifyBlockHash {blockHash signature pubKey} {
-	if {[string length $blockHash] != $::nano::block::hashLength} {
-		set blockHash [binary decode hex $blockHash]
-	}
-
-	if {[string length $signature] != $::nano::block::signatureLength} {
-		set signature [binary decode hex $signature]
-	}
-
-	if {[string length $pubKey] != $::nano::key::publicKeyLength} {
-		set key [binary decode hex $pubKey]
-	}
-
-	set valid [::nano::internal::verifyDetached $blockHash $signature $pubKey]
-
-	return $valid
-}
-
-proc ::nano::block::verifyBlock {blockData args} {
-	set blockHash [::nano::block::hash $blockData]
-
-	tailcall ::nano::block::verifyBlockHash $blockHash {*}$args
-}
-
-proc ::nano::block::verifyBlockJSON {blockJSON args} {
-	set blockData [::nano::block::fromJSON $blockJSON]
-
-	tailcall ::nano::block::verifyBlock $blockData {*}$args
-}
-
-proc ::nano::block::_dictToJSON {blockDict} {
+proc ::nano::block::json::fromDict {blockDict} {
 	array set block $blockDict
-
-	if {[info exists block(signKey)] && ([info exists block(_blockData)] || [info exists block(_blockHash)])} {
-		if {![info exists block(_blockHash)]} {
-			set block(_blockHash) [binary encode hex [::nano::block::hash $block(_blockData)]]
-		}
-
-		set block(signature) [::nano::block::signBlockHash $block(_blockHash) $block(signKey) -hex]
-	}
 
 	if {$block(type) eq "state"} {
 		if {![info exists block(link)]} {
 			set block(link) [::nano::address::toPublicKey $block(link_as_account) -hex]
 		}
+
 		if {![info exists block(link_as_address)]} {
 			set addressFormatFlag "-nano"
 			foreach field {account destination representative} {
@@ -378,9 +339,28 @@ proc ::nano::block::_dictToJSON {blockDict} {
 
 		switch -exact -- $field {
 			"source" - "previous" - "link" - "_blockHash" - "_workHash" {
+				if {[string length $block($field)] == $::nano::block::hashLength} {
+					set block($field) [binary encode hex $block($field)]
+				}
+
 				set block($field) [string toupper $block($field)]
 			}
+			"signature" {
+				if {[string length $block($field)] == $::nano::block::signatureLength} {
+					set block($field) [binary encode hex $block($field)]
+				}
+
+				set block($field) [string toupper $block($field)]
+			}
+			"work" {
+				if {[string length $block($field)] == $::nano::work::workValueLength} {
+					set block($field) [binary encode hex $block($field)]
+				}
+
+				set block($field) [string tolower $block($field)]
+			}
 		}
+
 		return -level 0 [list $field [json::write string $block($field)]]
 	}]
 	set blockJSONEntries [join $blockJSONEntries]
@@ -390,7 +370,7 @@ proc ::nano::block::_dictToJSON {blockDict} {
 	return $blockJSON
 }
 
-proc ::nano::block::toDict {blockData args} {
+proc ::nano::block::dict::fromBlock {blockData args} {
 	set block(type) ""
 	set addressPrefix "nano_"
 	foreach arg $args {
@@ -430,7 +410,7 @@ proc ::nano::block::toDict {blockData args} {
 
 	switch -- $block(type) {
 		"state" {
-			binary scan $blockData H64a32H64a32H32H64 \
+			binary scan $blockData a32a32H64a32H32H64 \
 				block(header) \
 				block(account) \
 				block(previous) \
@@ -438,7 +418,7 @@ proc ::nano::block::toDict {blockData args} {
 				block(balance) \
 				block(link)
 
-			if {$block(header) ne "0000000000000000000000000000000000000000000000000000000000000006"} {
+			if {$block(header) ne $::nano::block::stateBlockPreamble} {
 				return -code error "Invalid block"
 			}
 		}
@@ -489,10 +469,10 @@ proc ::nano::block::toDict {blockData args} {
 	return [array get block]
 }
 
-proc ::nano::block::toJSON {blockData args} {
-	set blockDict [::nano::block::toDict $blockData {*}$args]
+proc ::nano::block::json::fromBlock {blockData args} {
+	set blockDict [::nano::block::dict::fromBlock $blockData {*}$args]
 
-	set blockJSON [_dictToJSON $blockDict]
+	set blockJSON [::nano::block::json::fromDict $blockDict]
 
 	return $blockJSON
 }
@@ -522,16 +502,269 @@ proc ::nano::block::hash {blockData args} {
 	return $hash
 }
 
-proc ::nano::block::jsonFromDict {blockDict} {
-	set blockJSON [::nano::block::_dictToJSON $blockDict]
-	set block [::nano::block::fromJSON $blockJSON]
-	set blockHash [::nano::block::hash $block]
+proc ::nano::block::signBlockHash {blockHash privateKey args} {
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
 
-	dict set blockDict "_blockHash" [binary encode hex $blockHash]
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
 
-	set blockJSON [::nano::block::_dictToJSON $blockDict]
+	if {[string length $privateKey] != $::nano::key::privateKeyLength} {
+		set privateKey [binary decode hex $privateKey]
+	}
 
-	return $blockJSON
+	set signature [::nano::internal::signDetached $blockHash $privateKey]
+
+	if {$outputFormat eq "hex"} {
+		set signature [string toupper [binary encode hex $signature]]
+	}
+
+	return $signature
+}
+
+proc ::nano::block::sign {blockData args} {
+	set blockHash [::nano::block::hash $blockData]
+
+	tailcall ::nano::block::signBlockHash $blockHash {*}$args
+}
+
+proc ::nano::block::verifyBlockHash {blockHash signature publicKey} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	if {[string length $signature] != $::nano::block::signatureLength} {
+		set signature [binary decode hex $signature]
+	}
+
+	if {[string length $publicKey] != $::nano::key::publicKeyLength} {
+		set publicKey [binary decode hex $publicKey]
+	}
+
+	set valid [::nano::internal::verifyDetached $blockHash $signature $publicKey]
+
+	return $valid
+}
+
+proc ::nano::block::verifyBlock {blockData args} {
+	set blockHash [::nano::block::hash $blockData]
+
+	tailcall ::nano::block::verifyBlockHash $blockHash {*}$args
+}
+
+proc ::nano::block::dict::_addBlockData {blockDict} {
+	if {[dict exists $blockDict _blockData]} {
+		return $blockDict
+	}
+
+	set blockData [::nano::block::dict::toBlock $blockDict]
+
+	dict set blockDict _blockData $blockData
+
+	return $blockDict
+}
+
+proc ::nano::block::dict::_addBlockHash {blockDict} {
+	if {[dict exists $blockDict _blockHash]} {
+		return $blockDict
+	}
+
+	set blockDict [_addBlockData $blockDict]
+	set blockData [dict get $blockDict _blockData]
+
+	set blockHash [::nano::block::hash $blockData -binary]
+
+	dict set blockDict _blockHash $blockHash
+
+	return $blockDict
+}
+
+proc ::nano::block::dict::sign {blockDict privateKey args} {
+	set outputMode "signature"
+	set outputFormat "bytes"
+	foreach arg $args {
+		switch -- $arg {
+			"-update" {
+				set outputMode "update"
+			}
+			"-signature" {
+				set outputMode "signature"
+			}
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set blockDict [_addBlockHash $blockDict]
+
+	set blockHash [dict get $blockDict _blockHash]
+
+	set signature [::nano::block::signBlockHash $blockHash $privateKey -binary]
+
+	if {$outputMode eq "signature"} {
+		if {$outputFormat eq "hex"} {
+			set signature [binary encode hex $signature]
+		}
+
+		return $signature
+	}
+
+	dict set blockDict signature $signature
+
+	return $blockDict
+}
+
+proc ::nano::block::json::sign {blockJSON privateKey args} {
+	set outputMode "signature"
+	foreach arg $args {
+		switch -- $arg {
+			"-update" {
+				set outputMode "update"
+			}
+			"-signature" {
+				set outputMode "signature"
+			}
+			"-hex" - "-binary" {}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+
+	set retval [::nano::block::dict::sign $blockDict $privateKey {*}$args]
+
+	if {$outputMode eq "signature"} {
+		return $retval
+	}
+
+	set retval [::nano::block::json::fromDict $retval]
+
+	return $retval
+}
+
+proc ::nano::block::dict::verifySignature {blockDict} {
+	set publicKey [::nano::address::toPublicKey [dict get $blockDict account]]
+	set signature [dict get $blockDict signature]
+
+	set blockDict [_addBlockHash $blockDict]
+
+	set blockHash [dict get $blockDict _blockHash]
+
+	tailcall ::nano::block::verifyBlockHash $blockHash $signature $publicKey
+}
+
+proc ::nano::block::json::verifySignature {blockJSON} {
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+
+	tailcall ::nano::block::dict::verifySignature $blockDict
+}
+
+proc ::nano::block::dict::work {blockDict args} {
+	set outputMode "work"
+	foreach arg $args {
+		switch -- $arg {
+			"-update" {
+				set outputMode "update"
+			}
+			"-work" {
+				set outputMode "work"
+			}
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set blockDict [_addBlockHash $blockDict]
+
+	set blockHash [dict get $blockDict _blockHash]
+
+	set work [::nano::work::fromBlockHash $blockHash -binary]
+
+	if {$outputMode eq "work"} {
+		if {$outputFormat eq "hex"} {
+			set work [binary encode hex $work]
+		}
+
+		return $work
+	}
+
+	dict set blockDict work $work
+
+	return $blockDict
+}
+
+proc ::nano::block::json::work {blockJSON args} {
+	set outputMode "work"
+	foreach arg $args {
+		switch -- $arg {
+			"-update" {
+				set outputMode "update"
+			}
+			"-work" {
+				set outputMode "work"
+			}
+			"-hex" - "-binary" {}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+
+	set retval [::nano::block::dict::work $blockDict {*}$args]
+
+	if {$outputMode eq "work"} {
+		return $retval
+	}
+
+	set retval [::nano::block::json::fromDict $retval]
+
+	return $retval
+}
+
+proc ::nano::block::dict::validateWork {blockDict} {
+	set blockDict [_addBlockHash $blockDict]
+
+	set blockHash [dict get $blockDict _blockHash]
+	set work      [dict get $blockDict work]
+
+	tailcall ::nano::work::validate $blockHash $work
+}
+
+proc ::nano::block::json::validateWork {blockJSON} {
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+
+	tailcall ::nano::block::dict::validate $blockDict
 }
 
 #   send from <account> to <account> previousBalance <balance>
@@ -557,10 +790,14 @@ proc ::nano::block::create::send {args} {
 	]
 
 	if {[info exists block(signKey)]} {
-		dict set blockDict signKey $block(signKey)
+		set blockDict [::nano::block::dict::sign $blockDict $block(signKey) -update]
 	}
 
-	tailcall ::nano::block::jsonFromDict $blockDict
+	if {[info exists block(-json)] && $block(-json)} {
+		return [::nano::block::json::fromDict $blockDict]
+	}
+
+	return $blockDict
 }
 
 # Usage:
@@ -569,6 +806,7 @@ proc ::nano::block::create::send {args} {
 #           ?representative <representative>?
 proc ::nano::block::create::receive {args} {
 	array set block $args
+
 	if {![info exists block(representative)]} {
 		set block(representative) $block(to)
 	}
@@ -595,10 +833,14 @@ proc ::nano::block::create::receive {args} {
 	]
 
 	if {[info exists block(signKey)]} {
-		dict set blockDict signKey $block(signKey)
+		set blockDict [::nano::block::dict::sign $blockDict $block(signKey) -update]
 	}
 
-	tailcall ::nano::block::jsonFromDict $blockDict
+	if {[info exists block(-json)] && $block(-json)} {
+		return [::nano::block::json::fromDict $blockDict]
+	}
+
+	return $blockDict
 }
 
 # Usage:
@@ -623,46 +865,48 @@ proc ::nano::block::create::setRepresentative {args} {
 		dict set blockDict signKey $block(signKey)
 	}
 
-	tailcall ::nano::block::jsonFromDict $blockDict
-}
-
-proc ::nano::work::fromBlockhash {blockhash} {
-	if {[string length $blockhash] != 32} {
-		set blockhash [binary decode hex $blockhash]
+	if {[info exists block(signKey)]} {
+		set blockDict [::nano::block::dict::sign $blockDict $block(signKey) -update]
 	}
 
-	set work [binary encode hex [::nano::internal::generateWork $blockhash]]
+	if {[info exists block(-json)] && $block(-json)} {
+		return [::nano::block::json::fromDict $blockDict]
+	}
+
+	return $blockDict
+}
+
+# Work generation functions
+proc ::nano::work::fromBlockHash {blockHash} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	set work [binary encode hex [::nano::internal::generateWork $blockHash]]
 	set work [string tolower $work]
+
 	return $work
 }
 
-proc ::nano::work::fromBlock {blockJSON} {
-	set blockDict [::json::json2dict $blockJSON]
-	set workhash [dict get $blockDict _workHash]
-	tailcall ::nano::work::fromBlockhash $workhash
+proc ::nano::work::fromBlock {blockData} {
+	set blockHash [::nano::block::hash $blockData -binary]
+
+	tailcall ::nano::work::fromBlockhash $blockHash
 }
 
-proc ::nano::work::updateBlock {blockJSON} {
-	set blockDict [::json::json2dict $blockJSON]
-	set workhash [dict get $blockDict _workHash]
-	set work [::nano::work::fromBlockhash $workhash]
-	dict set blockDict work $work
-	tailcall ::nano::block::_dictToJSON $blockDict
-}
-
-proc ::nano::work::validate {blockhash work} {
-	if {[string length $blockhash] != 32} {
-		set blockhash [binary decode hex $blockhash]
+proc ::nano::work::validate {blockHash work} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
 	}
 
-	if {[string length $work] != 8} {
+	if {[string length $work] != $::nano::work::workValueLength} {
 		set work [binary decode hex $work]
 	}
 
-	tailcall ::nano::internal::validateWork $blockhash $work
+	tailcall ::nano::internal::validateWork $blockHash $work
 }
 
-# -- Tracked accounts --
+# High level account management
 proc ::nano::account::setFrontier {account frontierHash balance representative} {
 	set accountPubKey [::nano::address::toPublicKey $account -hex]
 	set ::nano::account::frontiers($accountPubKey) [dict create \
@@ -694,7 +938,6 @@ proc ::nano::account::receive {account blockHash signKey} {
 	dict with frontierInfo {}
 
 	set blockInfo [dict get $::nano::account::pending $accountPubKey $blockHash]
-	dict unset ::nano::account::pending $accountPubKey $blockHash
 
 	set amount [dict get $blockInfo amount]
 	set blockArgs [list to $account previousBalance $balance \
@@ -705,12 +948,15 @@ proc ::nano::account::receive {account blockHash signKey} {
 		lappend blockArgs previous $frontierHash
 	}
 
+	dict set blockArgs -json true
+
 	set block [::nano::block::create::receive {*}$blockArgs]
 
 	set newFrontierHash [dict get [json::json2dict $block] "_blockHash"]
 	set balance [expr {$balance + $amount}]
 
 	setFrontier $account $newFrontierHash $balance $representative
+	dict unset ::nano::account::pending $accountPubKey $blockHash
 
 	return $block
 }
@@ -734,7 +980,8 @@ proc ::nano::account::send {fromAccount toAccount amount signKey} {
 		previous        $fromFrontierHash \
 		previousBalance $fromBalance \
 		amount          $amount \
-		signKey         $signKey
+		signKey         $signKey \
+		-json           true
 	]
 
 	set newBalance [expr {$fromBalance - $amount}]

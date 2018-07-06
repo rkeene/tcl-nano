@@ -1,0 +1,50 @@
+Address
+::nano::address::toPublicKey address ?-hex|-binary? ?-verify|-no-verify?    ->  publicKey
+::nano::address::fromPublicKey pubKey ?-xrb|-nano?                          ->  address
+::nano::address::fromPrivateKey privateKey ?-xrb|-nano?                     ->  address
+
+Key and Seed
+::nano::key::newSeed ?-hex|-binary?                                         ->  seed
+::nano::key::newKey ?-hex|-binary?                                          ->  privateKey
+::nano::key::fromSeed seed ?index? ?-hex|-binary?                           ->  privateKey
+::nano::key::publicKeyFromPrivateKey privateKey ?-hex|-binary?              ->  publicKey
+
+Low-level Block
+::nano::block::json::toBlock blockJSON                                      ->  blockData
+::nano::block::json::fromDict blockDict                                     ->  blockJSON
+::nano::block::json::fromBlock blockData ?-xrb|-nano? ?-type=<blockType>? ?-signKey=<privateKey>? ->  blockJSON
+::nano::block::json::sign blockJSON privateKey ?-update|-signature ?-hex|binary?? ->  signature|blockJSON
+::nano::block::json::verifySignature blockJSON args                         ->  boolean
+::nano::block::json::work blockJSON ?-update|-work ?-hex|-binary??          ->  work|blockJSON
+::nano::block::json::validateWork blockJSON                                 ->  boolean
+
+::nano::block::dict::toBlock blockDict                                      ->  blockData
+::nano::block::dict::fromJSON blockJSON                                     ->  blockDict
+::nano::block::dict::fromBlock blockData ?-xrb|-nano? ?-type=<blockType>? ?-signKey=<privatKey>? ->  blockDict
+::nano::block::dict::sign blockDict privateKey ?-update|-signature ?-hex|-binary?? ->  signature|blockDict
+::nano::block::dict::verifySignature blockDict args                         ->  boolean
+::nano::block::dict::work blockDict ?-update|-work ?-hex|-binary??          ->  work|blockDict
+::nano::block::dict::validateWork blockDict                                 ->  boolean
+
+::nano::block::hash blockData ?-hex|-binary?                                ->  blockHash
+
+::nano::block::signBlockHash blockHash privateKey ?-hex|-binary?            ->  signature
+::nano::block::sign blockData privateKey ?-hex|-binary?                     ->  signature
+
+::nano::block::verifyBlockHash blockHash signature publicKey                ->  boolean
+::nano::block::verify blockData signature publicKey                         ->  boolean
+
+::nano::block::create::send args                                            ->  blockJSON|blockDict
+::nano::block::create::receive args                                         ->  blockJSON|blockDict
+::nano::block::create::setRepresentative args                               ->  blockJSON|blockDict
+
+::nano::work::fromBlockHash blockHash                                       ->  work
+::nano::work::fromBlock blockData                                           ->  work
+::nano::work::validate blockHash work                                       ->  boolean
+
+:nano::account::setFrontier account frontierHash balance representative    ->  nil
+:nano::account::getFrontier account args                                   ->  frontierInfo
+:nano::account::addPending account blockHash amount                        ->  nil
+:nano::account::receive account blockHash privateKey                       ->  blockJSON|blockDict
+:nano::account::send fromAccount toAccount amount privateKey               ->  blockJSON|blockDict
+:nano::account::receiveAllPending account privateKey                       ->  ListOfBlockJSON|ListOfBlockDict

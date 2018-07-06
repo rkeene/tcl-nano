@@ -439,8 +439,11 @@ static void nano_generate_work(const unsigned char *blockhash, unsigned char *wo
 
 static int nano_tcl_validate_work(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *blockhash, *work;
+	Tcl_WideUInt tclWorkMin;
 	uint64_t workMin = NANO_WORK_DEFAULT_MIN;
 	int blockhash_length, work_length;
+	int valid, result;
+	int tgwifo_ret;
 
 	if (objc < 3 || objc > 4) {
 		Tcl_WrongNumArgs(interp, 1, objv, "workBlockhash work ?workMin?");
@@ -463,13 +466,13 @@ static int nano_tcl_validate_work(ClientData clientData, Tcl_Interp *interp, int
 	}
 
 	if (objc == 4) {
-		/* XXX:TODO: Implement getting a uint64_t from Tcl */
-		Tcl_SetResult(interp, "User-supplied workMin is not implemented", NULL);
+		tgwifo_ret = Tcl_GetWideIntFromObj(interp, objv[3], (Tcl_WideInt *) &tclWorkMin);
+		if (tgwifo_ret != TCL_OK) {
+			return(tgwifo_ret);
+		}
 
-		return(TCL_ERROR);
+		workMin = tclWorkMin;
 	}
-
-	int valid, result;
 
 	valid = nano_validate_work(blockhash, work, workMin);
 	if (valid) {
@@ -487,10 +490,12 @@ static int nano_tcl_validate_work(ClientData clientData, Tcl_Interp *interp, int
 }
 
 static int nano_tcl_generate_work(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	Tcl_WideUInt tclWorkMin;
 	unsigned char *blockhash;
 	unsigned char work[NANO_WORK_VALUE_LENGTH];
 	uint64_t workMin = NANO_WORK_DEFAULT_MIN;
 	int blockhash_length;
+	int tgwifo_ret;
 
 	if (objc < 2 || objc > 3) {
 		Tcl_WrongNumArgs(interp, 1, objv, "workBlockhash ?workMin?");
@@ -506,10 +511,12 @@ static int nano_tcl_generate_work(ClientData clientData, Tcl_Interp *interp, int
 	}
 
 	if (objc == 3) {
-		/* XXX:TODO: Implement getting a uint64_t from Tcl */
-		Tcl_SetResult(interp, "User-supplied workMin is not implemented", NULL);
+		tgwifo_ret = Tcl_GetWideIntFromObj(interp, objv[2], (Tcl_WideInt *) &tclWorkMin);
+		if (tgwifo_ret != TCL_OK) {
+			return(tgwifo_ret);
+		}
 
-		return(TCL_ERROR);
+		workMin = tclWorkMin;
 	}
 
 	nano_generate_work(blockhash, work, workMin);

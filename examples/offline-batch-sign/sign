@@ -43,14 +43,14 @@ while true {
 
 	if {[catch {
 		# Verify the seed
-		::nano::internal::generateKey [binary decode hex $seed] 0
+		::nano::key::fromSeed $seed 0
 
 		lappend seeds $seed
 	} err]} {
 		puts "Error: $err"
 	}
 }
-set penultimateDestinationKey [::nano::internal::generateKey [binary decode hex [lindex $seeds 0]] 0]
+set penultimateDestinationKey [::nano::key::fromSeed [lindex $seeds 0] 0]
 set penultimateDestination    [::nano::address::fromPrivateKey $penultimateDestinationKey]
 
 puts ">> Output File"

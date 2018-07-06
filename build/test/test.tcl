@@ -87,7 +87,7 @@ proc test_hashing {} {
 
 proc test_keygeneration {} {
 	# Generate a new key pair
-	set key [::nano::key::generateNewKey]
+	set key [::nano::key::newKey]
 	if {[string length $key] != 32} {
 		puts "\[1.FAIL\] Got: [string length $key]"
 		puts "\[1.FAIL\] Exp: 32"
@@ -109,7 +109,7 @@ proc test_keygeneration {} {
 
 	# Create a key pair from a seed and index
 	set seed [binary decode hex C4D214F19E706E9C7487CEF00DE8059200C32414F0ED82E5E33B523AEDF719BA]
-	set key [::nano::key::computeKey $seed 0]
+	set key [::nano::key::fromSeed $seed 0]
 	set pubKey [string toupper [binary encode hex [::nano::internal::publicKey $key]]]
 	set pubKey_expected "B63EC7A797F2A5858C754EC9C0537920C4F9DEA58F9F411F0C2161F6D303AA7A"
 	if {$pubKey ne $pubKey_expected} {
@@ -147,7 +147,7 @@ proc test_addressformat {} {
 
 proc test_blocks {} {
 	set seed [binary decode hex C4D214F19E706E9C7487CEF00DE8059200C32414F0ED82E5E33B523AEDF719BA]
-	set key [::nano::key::computeKey $seed 0 -hex]
+	set key [::nano::key::fromSeed $seed 0 -hex]
 	set address [::nano::address::fromPrivateKey $key -xrb]
 
 	# High-level primitives
@@ -156,7 +156,7 @@ proc test_blocks {} {
 		to $address \
 		amount 1000000000000000000000000000000 \
 		sourceBlock "207D3043D77B84E892AD4949D147386DE4C2FE4B2C8DC13F9469BC4A764681A7" \
-		signKey $key
+		signKey $key -json true
 	]
 
 	set blockDict [::json::json2dict $block]
@@ -176,7 +176,7 @@ proc test_blocks {} {
 		previous "D46BFC2E35B5A3CA4230839D67676F4A8498C2567F571D2B66A7F7B72214DEEE" \
 		previousBalance 1000000000000000000000000000000 \
 		amount 1000000000000000000000000000000 \
-		signKey $key
+		signKey $key -json true
 	]
 
 	set blockDict [::json::json2dict $block]
@@ -190,11 +190,11 @@ proc test_blocks {} {
 	}
 
 	# JSON Parsing a block
-	set blockDict [::nano::block::toDict [::nano::block::fromJSON $block]]
+	set blockDict [::nano::block::dict::fromBlock [::nano::block::json::toBlock $block]]
 	dict unset blockDict _blockData
-	dict set blockDict signKey $key
 
-	set block     [::nano::block::jsonFromDict $blockDict]
+	set block     [::nano::block::json::fromDict $blockDict]
+	set block     [::nano::block::json::sign $block $key -update]
 	set blockDict [::json::json2dict $block]
 	set blockSignature [string toupper [dict get $blockDict signature]]
 	if {$blockSignature ne $blockSignature_expected} {
@@ -205,8 +205,8 @@ proc test_blocks {} {
 	}
 
 	# Verifying a block
-	set signature [::nano::block::signBlockJSON $block $key -hex]
-	set verify    [::nano::block::verifyBlockJSON $block $signature [::nano::key::publicKeyFromPrivateKey $key]]
+	set signature [::nano::block::json::sign $block $key -hex]
+	set verify    [::nano::block::json::verifySignature $block]
 	if {!$verify} {
 		puts "\[4.FAIL\] Got: $verify"
 		puts "\[4.FAIL\] Exp: true"
@@ -242,7 +242,7 @@ proc test_work {} {
 
 	# Generation
 	set blockhash "1C840FED01000000D8CBCF440CB1E4DF386761E6E66609563BD62A649DF6D0BE"
-	set work      [::nano::work::fromBlockhash $blockhash]
+	set work      [::nano::work::fromBlockHash $blockhash]
 	set verify    [::nano::work::validate $blockhash $work]
 	if {!$verify} {
 		puts "\[3.FAIL\] Got: $verify"
