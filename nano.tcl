@@ -1014,3 +1014,28 @@ proc ::nano::account::receiveAllPending {key {accountPubKey ""}} {
 
 	return $outBlocks
 }
+
+proc ::nano::network::_read {fd bytes} {
+	if {[chan configure $fd -blocking]} {
+		tailcall ::read $fd $bytes
+	}
+
+	set data ""
+	while {$bytes > 0} {
+		set readData [read $fd $bytes]
+		if {[string length $readData] == 0} {
+			if {[eof $fd]} {
+				break
+			} else {
+				update
+
+				continue
+			}
+		}
+
+		incr bytes -[string length $readData]
+		append data $readData
+	}
+
+	return $data
+}
