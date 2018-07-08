@@ -2,7 +2,7 @@ CC            := @CC@
 AR            := @AR@
 RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
+CPPFLAGS      := -I. -I@srcdir@ -I@srcdir@/tweetnacl/ -I@srcdir@/blake2b/ -DNACL_ED25519_BLAKE2B=1 @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
@@ -21,16 +21,27 @@ export CC CFLAGS CPPFLAGS
 
 all: @EXTENSION_TARGET@ pkgIndex.tcl
 
-@EXTENSION_TARGET@: tweetnacl.o blake2b.o randombytes.o nano.o Makefile
 ifeq (@TCLEXT_BUILD@,shared)
+@EXTENSION_TARGET@: tweetnacl.o blake2b.o randombytes.o nano.o Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o randombytes.o tweetnacl.o blake2b.o $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
-	rm -f @EXTENSION_TARGET@
-	$(AR) rc @EXTENSION_TARGET@ nano.o randombytes.o blake2b.o tweetnacl.o
+@EXTENSION_TARGET@: nano-amalgamation.o Makefile
+	-@WEAKENSYMS@ nano-amalgamation.o
+	-@REMOVESYMS@ nano-amalgamation.o
+	$(AR) rc @EXTENSION_TARGET@ nano-amalgamation.o
 	-$(RANLIB) @EXTENSION_TARGET@
 endif
+
+# The amalgamation is used when compiling statically so that the same ABI can be exposed
+# to upstream projects rather than requiring them to filter out our symbols
+nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/tweetnacl/tweetnacl.c @srcdir@/blake2b/blake2b.c Makefile
+	rm -f nano-amalgamation.c
+	cat @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/tweetnacl/tweetnacl.c @srcdir@/blake2b/blake2b.c > nano-amalgamation.c
+
+nano-amalgamation.o: nano-amalgamation.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h @srcdir@/randombytes.h nano.tcl.h @srcdir@/blake2b/blake2-impl.h Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
 
 pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
 	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
@@ -62,6 +73,7 @@ install: @EXTENSION_TARGET@ pkgIndex.tcl
 	$(INSTALL_DATA)    pkgIndex.tcl '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
  
 clean:
+	rm -f nano-amalgamation.c nano-amalgamation.o
 	rm -f @EXTENSION_TARGET@ nano.o
 	rm -f blake2b.o tweetnacl.o randombytes.o
 
