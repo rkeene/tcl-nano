@@ -65,7 +65,7 @@ nano.tcl.h: @srcdir@/nano.tcl Makefile
 	mv nano.tcl.h.new.2 nano.tcl.h
 
 test: @EXTENSION_TARGET@ pkgIndex.tcl
-	@srcdir@/build/test/test.tcl .
+	@srcdir@/test/test.tcl .
 
 install: @EXTENSION_TARGET@ pkgIndex.tcl
 	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
