@@ -43,26 +43,26 @@ nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/tweetnacl/t
 nano-amalgamation.o: nano-amalgamation.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h @srcdir@/randombytes.h nano.tcl.h @srcdir@/blake2b/blake2-impl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
 
-pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
-	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
-
 nano.o: @srcdir@/nano.c @srcdir@/tweetnacl/tweetnacl.h @srcdir@/blake2b/blake2.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
 
 randombytes.o: @srcdir@/randombytes.c @srcdir@/randombytes.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o randombytes.o -c @srcdir@/randombytes.c
 
-nano.tcl.h: @srcdir@/nano.tcl Makefile
-	od -A n -v -t xC < '@srcdir@/nano.tcl' > nano.tcl.h.new.1
-	sed 's@  *@@g;s@..@0x&, @g' < nano.tcl.h.new.1 > nano.tcl.h.new.2
-	rm -f nano.tcl.h.new.1
-	mv nano.tcl.h.new.2 nano.tcl.h
-
 tweetnacl.o: @srcdir@/tweetnacl/tweetnacl.c @srcdir@/tweetnacl/tweetnacl.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o tweetnacl.o -c @srcdir@/tweetnacl/tweetnacl.c
 
 blake2b.o: @srcdir@/blake2b/blake2b.c @srcdir@/blake2b/blake2.h @srcdir@/blake2b/blake2-impl.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o blake2b.o -c @srcdir@/blake2b/blake2b.c
+
+pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
+	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
+
+nano.tcl.h: @srcdir@/nano.tcl Makefile
+	od -A n -v -t xC < '@srcdir@/nano.tcl' > nano.tcl.h.new.1
+	sed 's@  *@@g;s@..@0x&, @g' < nano.tcl.h.new.1 > nano.tcl.h.new.2
+	rm -f nano.tcl.h.new.1
+	mv nano.tcl.h.new.2 nano.tcl.h
 
 test: @EXTENSION_TARGET@
 	@srcdir@/build/test/test.tcl .
