@@ -64,7 +64,7 @@ nano.tcl.h: @srcdir@/nano.tcl Makefile
 	rm -f nano.tcl.h.new.1
 	mv nano.tcl.h.new.2 nano.tcl.h
 
-test: @EXTENSION_TARGET@
+test: @EXTENSION_TARGET@ pkgIndex.tcl
 	@srcdir@/build/test/test.tcl .
 
 install: @EXTENSION_TARGET@ pkgIndex.tcl
