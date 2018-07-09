@@ -2,19 +2,79 @@
 
 set -e
 
+# Wiki pages to update
+wikiPageManual='Manual'
+wikiPageDownloads='Downloads'
+
+# Function to update a wiki page, if it has changed
+function updatePage() {
+	local pageName newContents mimeType
+	local oldContents
+
+	pageName="$1"
+	newContents="$2"
+	mimeType="$3"
+
+	if [ -z "${mimeType}" ]; then
+		mimeType='text/x-fossil-wiki'
+	fi
+
+	oldContents="$(fossil wiki export "${pageName}" 2>/dev/null)" || oldContents=''
+
+	if [ "${oldContents}" != "${newContents}" ]; then
+		echo "${newContents}" | fossil wiki commit --mimetype "${mimeType}" "${pageName}" >/dev/null 2>/dev/null || \
+			echo "${newContents}" | fossil wiki create --mimetype "${mimeType}" "${pageName}" || return 1
+	fi
+
+	return 0
+}
+
+# Generate the new downloads page
+function generateDownloads() {
+	local version tarball sha256
+
+	version="$1"
+	tarball="$2"
+	sha256="$3"
+
+	if [ -z "${version}" -o -z "${tarball}" ]; then
+		return 0
+	fi
+
+	echo 'Tcl Nano'
+	echo '========'
+	echo ''
+	echo "Current release: **${version}**"
+	echo '  - Downloads:'
+	echo "    - [Source](/uv/${tarball}) <small>(SHA2-256: ${sha256})</small>"
+	echo ''
+	echo "Older releases may be found in the [archives](/uvlist)."
+
+	return 0
+}
+
+# Ensure we are operating in the root of the checkout
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-tclNanoVersion=0.1
-tclNanoReleaseDate='09-Jul-2018'
-wikiPageManual='Manual'
+# Update the repository
+fossil sync
+fossil uv sync
 
-manPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoVersion}/g;s/@@SHORT_DATE@@/${tclNanoRelaseDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/' | tail -n +5)"
+# Determine latest release
+tclNanoVersion="$(fossil uv ls | sed 's/^releases\/tcl-nano-\(.*\)\.tar\.gz/\1/;t;d' | sort --version-sort | tail -n 1)"
+tclNanoTarball="releases/tcl-nano-${tclNanoVersion}.tar.gz"
+tclNanoReleaseDate="$(fossil uv cat "${tclNanoTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar -tvf - 2>/dev/null | awk '{ print $4 }')"
+tclNanoTarballSHA256="$(fossil uv cat "${tclNanoTarball}" 2>/dev/null | openssl dgst -sha256 | sed 's/.*= *//')"
 
-oldManPage="$(fossil wiki export "${wikiPageManual}" 2>/dev/null)" || oldManPage=''
+# Generate the new manual page entry
+manPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoVersion}/g;s/@@SHORT_DATE@@/${tclNanoRelaseDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/g' | tail -n +5)"
+updatePage "${wikiPageManual}" "${manPage}"
 
-if [ "${oldManPage}" != "${manPage}" ]; then
-	echo "${manPage}" | fossil wiki commit --mimetype text/x-fossil-wiki "${wikiPageManual}" || \
-		echo "${manPage}" | fossil wiki create --mimetype text/x-fossil-wiki "${wikiPageManual}"
-fi
+# Generate the new download page entry
+downloadsPage="$(generateDownloads "${tclNanoVersion}" "${tclNanoTarball}" "${tclNanoTarballSHA256}")"
+updatePage "${wikiPageDownloads}" "${downloadsPage}" 'text/markdown'
+
+# Push changes if any have been made
+fossil sync
 
 exit 0
