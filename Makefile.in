@@ -67,11 +67,11 @@ nano.tcl.h: @srcdir@/nano.tcl Makefile
 test: @EXTENSION_TARGET@ pkgIndex.tcl
 	@srcdir@/test/test.tcl .
 
-install: @EXTENSION_TARGET@ pkgIndex.tcl nano.man
+install: @EXTENSION_TARGET@ pkgIndex.tcl @srcdir@/nano.man
 	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
 	$(INSTALL_PROGRAM) @EXTENSION_TARGET@ '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
 	$(INSTALL_DATA)    pkgIndex.tcl '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
-	$(INSTALL_DATA)    nano.man '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
+	$(INSTALL_DATA)    @srcdir@/nano.man '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
  
 clean:
 	rm -f nano-amalgamation.c nano-amalgamation.o
