@@ -24,7 +24,7 @@ argument is used and specified as true the result is a JSON representation,
 otherwise a Tcl dict representation is used.
 ..
 .PU
-.TH NANO N "8 Jul 2018" "nano @@VERS@@"
+.TH NANO N "@@SHORT_DATE@@" "nano @@VERS@@"
 .SH NAME
 nano \- Tcl bindings for Nano
 .SH SYNOPSIS
@@ -640,7 +640,7 @@ This procedure validates that the supplied
 is valid for the supplied
 .IR workData ,
 which is either a block hash or an account public key.  For more information
-see the descript of
+see the description of
 .BR fromWorkData .
 
 
