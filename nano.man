@@ -219,14 +219,88 @@ nano \- Tcl bindings for Nano
 .in -2m
 .in -2m
 
-.SH DESCRIPTION
+.SH INTRODUCTION
 .I Nano
-is a low-latency payment platform that requires minimal resources.  This
-package provides bindings for interacting with the Nano network from
+is a low-latency payment platform that requires minimal resources, relying on
+a peer-to-peer network to distribute "blocks", which are cryptographically
+signed transactions.  This package provides bindings for interacting with the
+Nano network from
 .IR Tcl .
-It uses Ed25519 with Blake2b as the cryptographic hashing primitive (rather
-than the normal construction of Ed25519 with the SHA3-512 cryptographic
-hashing function) for digital signatures.
+
+Nano uses Ed25519 with Blake2b as the cryptographic hashing primitive for
+digital signatures, rather than the common construction of Ed25519 with the
+SHA2-512 cryptographic hashing function.
+
+Nano implements a "blockchain", which is a cryptographic linked-list, by
+identifying every "block" by its crytographic hash and providing a pointer from
+every block to its predecessor in the "chain" as part of the hashed data.
+
+This predecessors is referred to here as the "previous" block.  In Nano,
+each account has its own blockchain and they reference each other using a
+data structure referred to as "block lattice", where the individual chains
+contain blocks that reference blocks in other chains to tie them together.
+The field within blocks that reference other blocks on a different blockchain
+is referred to as either the "link" field or "source block hash".
+
+Each Nano block also encapsulates the full state of the account, containing,
+at a minimum, a tuple of
+.RI ( account ", " balance ", " representative ", " previous ).
+
+Since Nano blocks are signed by independent actors, who may, for their own gain,
+generate multiple valid blocks referring to the same predecessor
+.RI ( previous )
+block, an arbitration mechanism is employed by the Nano network to decide which
+blocks are valid within a given chain.  This arbitration mechanism operates on
+the principles of consensus.  Each account holder has a stake in the network
+operating nominally, otherwise the balance represented by an account is not
+useful for a transfer of value.  In Nano the stake an account has in the
+network is equal to the account's balance.  The larger the stake an account has
+the more incentivized the account-holder is to ensure the network is operating
+nominally and not accepting multiple blocks that reference the same
+predecessor.
+
+Nano utilizes a mechanism called
+.I voting
+to determine which blocks are valid and which blocks are not valid.  Each
+stakeholder votes their stake upon seeing a new subordinate block
+.RI ( i.e. ,
+a block with a unique
+.I previous
+value).  Since voting is an active and on-going process that occurs on the Nano
+peer-to-peer network, participants must be online to vote their stake.  As this
+is often inconvienent or impossible, stakeholders may select another
+stakeholder to vote their share of the network.  This delegate is referred to
+as a
+.IR representative .
+
+Representatives should be chosen carefully by stakeholders since malicious
+representatives may attempt to gather voting power and destablize the Nano
+network by altering decisions made by consensus previously.
+
+Nano accounts are referred to by address.  A Nano address starts with the
+prefix
+.RB \(dq nano_ "\(dq or \(dq" xrb_ \(dq.
+A Nano address is actually the public portion of a private/public keypair,
+plus the prefix, and a checksum to ensure that no digits are mistyped by
+users when communicating them.  Nano public keys are 256-bit keys in the
+Ed25519 algorithm.
+
+A user may have many accounts.  To simplify the process of maintaining the
+private/public keypairs for all the accounts, Nano supports the concept of a
+.IR wallet .
+A
+.I wallet
+is a conceptual entity that is used to refer to a
+.IR seed ,
+which is a random 256-bit number that can be used to derive mulitple
+private/public keypairs from.
+
+Balances in Nano are stored in a 128-bit integer value.  There are various
+units for representing the balance, the smallest and base unit is called
+.RI \(dq raw \(dq.
+The most common unit for users to use is called
+.RI \(dq Nano \(dq,
+one of which is equal to 1e30 raw.
 
 .SH PROCEDURES
 .SS Addresses
@@ -665,11 +739,21 @@ associated with that block that corresponds to the head of an account's chain.
 .I account
 .RI " -> " frontierInfo
 
+This procedure is used as part of the High-level Account interface.  It gets
+the Tcl dictionary associated with the frontier most recently set for the
+specified
+.IR account .
+
 .TP
 .B :nano::account::getFrontier
 .I account
 .RB ? frontierHash | balance | representative ?
 .RI " -> " frontierHash | balance | representative
+
+This procedure is used as part of the High-level Account interface.  It gets
+a specific item from Tcl dictionary associated with the frontier most recently
+set for the specified
+.IR account .
 
 .TP
 .B :nano::account::addPending
@@ -677,16 +761,62 @@ associated with that block that corresponds to the head of an account's chain.
 .I blockHash
 .I amount
 
+This procedure is used as part of the High-level Account interface.  It is
+used to indicate than a given
+.I account
+has a
+.B receive
+block that they could create.  The block hash of the corresponding
+.B send
+block should be supplied as the
+.I blockHash
+parameter.  The amount of Nano that was sent in the
+.B send
+block should be specified as the
+.I amount
+parameter (in units of raw).
+
 .TP
 .B :nano::account::getPending
 .I account
 .RI ? blockHash ?
-.RI " -> " listOfDicts
+.RI " -> " dict
+
+This procedure is used as part of the High-level Account interface.  It is
+used to retrieve information stored by
+.B addPending 
+for a given
+.IR account .
+If the
+.I blockHash
+parameter is supplied then a Tcl dictionary is returned with a key called
+.B amount
+which contains the amount stored previously.  If the
+.I blockHash
+parameter is not supplied then a Tcl dictionary is returned with keys
+corresponding to each block hash pending for the specified
+.IR account ,
+and containing a subordinate Tcl dictionary with a key called
+.B amount
+as previously described.
 
 .TP
 .B ::nano::account::clearPending
 .I account
 .RI ? blockHash ?
+
+This procedure is used as part of the High-level Account interface.  It is
+used to clear (that is, remove from the conceptual state of "pending") entries
+created previously with
+.B addPending
+for a given
+.IR account .
+If the
+.I blockHash
+parameter is supplied then only the entry corresponding to that blockhash is
+cleared, otherwise all entries for the specified
+.I account
+are cleared.
 
 .TP
 .B :nano::account::receive
@@ -695,11 +825,20 @@ associated with that block that corresponds to the head of an account's chain.
 .I privateKey
 .RI " -> " blockJSON | blockDict
 
+This procedure is used as part of the High-level Account interface.  It is
+used to generate a receive block.  Its interface is subject to change and
+not considered stable.
+
 .TP
 .B :nano::account::receiveAllPending
 .I account
 .I privateKey
 .RI " -> " listOfBlockJSON | listOfBlockDict
+
+This procedure is used as part of the High-level Account interface.  It is
+used to generate receive blocks for every pending receive on a given
+.IR account .
+Its interface is subject to change and not considered stable.
 
 .TP
 .B :nano::account::send
@@ -709,6 +848,10 @@ associated with that block that corresponds to the head of an account's chain.
 .I privateKey
 .RI " -> " blockJSON | blockDict
 
+This procedure is used as part of the High-level Account interface.  It is
+used to generate a send block.  Its interface is subject to change and
+not considered stable.
+
 .TP
 .B ::nano::account::setRepresentative
 .I account
@@ -716,8 +859,27 @@ associated with that block that corresponds to the head of an account's chain.
 .I privateKey
 .RI " -> " blockJSON | blockDict
 
+This procedure is used as part of the High-level Account interface.  It is
+used to generate a block that changes the representative for the given
+.IR account .
+Its interface is subject to change and not considered stable.
+
 .SH EXAMPLES
 .SS Example 1
+.EX
+package require nano @@VERS@@
+
+set seed [::nano::key::newSeed -hex]
+puts "Generated seed: $seed"
+
+for {set index 0} {$index < 10} {incr index} {
+	set accountPrivateKey [::nano::key::fromSeed $seed $index -hex]
+	set accountAddress [::nano::address::fromPrivateKey $accountPrivateKey]
+
+	puts "    - $index: $accountAddress"
+}
+.EE
+
 .SS Example 2
 .SS Example 3
 
