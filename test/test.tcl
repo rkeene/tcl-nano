@@ -227,14 +227,35 @@ proc test_blocks {} {
 			"balance"     : "00F035A9C7D818E7C34148C524FFFFEE"
 		}
 	}]
+
+	## Ensure the balance was converted
+	set balance [dict get $block "balance"]
+	set balance_expected "1247239665165579623600346831066759150"
+	if {$balance != $balance_expected} {
+		puts "\[5.FAIL\] Got: $balance"
+		puts "\[5.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+
 	## Convert to JSON
 	set block [::nano::block::json::fromDict $block]
+
+	## Ensure balance is in hex again
+	set balance [dict get [::json::json2dict $block] "balance"]
+	set balance_expected "00F035A9C7D818E7C34148C524FFFFEE"
+	if {$balance != $balance_expected} {
+		puts "\[6.FAIL\] Got: $balance"
+		puts "\[6.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
 
 	## Convert back and verify signature
 	set verify [::nano::block::json::verifySignature $block]
 	if {!$verify} {
-		puts "\[5.FAIL\] Got: $verify"
-		puts "\[5.FAIL\] Exp: true"
+		puts "\[7.FAIL\] Got: $verify"
+		puts "\[7.FAIL\] Exp: true"
 
 		return false
 	}
@@ -242,8 +263,8 @@ proc test_blocks {} {
 	## Verify Proof of Work
 	set verify [::nano::block::json::validateWork $block]
 	if {!$verify} {
-		puts "\[6.FAIL\] Got: $verify"
-		puts "\[6.FAIL\] Exp: true"
+		puts "\[8.FAIL\] Got: $verify"
+		puts "\[8.FAIL\] Exp: true"
 
 		return false
 	}
