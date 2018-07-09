@@ -320,14 +320,22 @@ set tests {
 }
 
 foreach test $tests {
-	if {![test_$test]} {
-		puts "FAILED test $test"
+	puts -nonewline "\[    \] $test"
+	flush stdout
+
+	if {[catch {
+		if {![test_$test]} {
+			puts "\[FAIL\] $test"
+			exit 1
+		} else {
+			puts "\r\[ OK \] $test"
+		}
+	} testErr]} {
+		puts "\[ERR \] $test: $testErr"
 		exit 1
-	} else {
-		puts "\[OK\] $test"
 	}
 }
 
-puts "DONE"
+puts "\[DONE\] All tests pass"
 
 exit 0
