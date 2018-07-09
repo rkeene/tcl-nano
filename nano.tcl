@@ -932,13 +932,34 @@ proc ::nano::account::addPending {account blockHash amount} {
 	dict set ::nano::account::pending $accountPubKey $blockHash amount $amount
 }
 
+proc ::nano::account::getPending {account args} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+
+	set retval [dict create]
+	catch {
+		set retval [dict get $::nano::account::pending $accountPubKey {*}$args]
+	}
+
+	return $retval
+}
+
+proc ::nano::account::clearPending {account args} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+
+	catch {
+		dict unset ::nano::account::pending $accountPubKey {*}$args
+	}
+
+	return
+}
+
 proc ::nano::account::receive {account blockHash signKey} {
 	set accountPubKey [::nano::address::toPublicKey $account -hex]
 
 	set frontierInfo [getFrontier $account]
 	dict with frontierInfo {}
 
-	set blockInfo [dict get $::nano::account::pending $accountPubKey $blockHash]
+	set blockInfo [getPending $account $blockHash]
 
 	set amount [dict get $blockInfo amount]
 	set blockArgs [list to $account previousBalance $balance \
@@ -957,7 +978,7 @@ proc ::nano::account::receive {account blockHash signKey} {
 	set balance [expr {$balance + $amount}]
 
 	setFrontier $account $newFrontierHash $balance $representative
-	dict unset ::nano::account::pending $accountPubKey $blockHash
+	clearPending $account $blockHash
 
 	return $block
 }
@@ -1001,16 +1022,40 @@ proc ::nano::account::receiveAllPending {key {accountPubKey ""}} {
 		set accountPubKey [::nano::key::publicKeyFromPrivateKey $key -hex]
 	}
 
-	if {![dict exists $::nano::account::pending $accountPubKey]} {
+	set account [::nano::address::fromPublicKey $accountPubKey]
+
+	set pendingBlocks [getPending $account]
+	if {[llength $pendingBlocks] == 0} {
 		return $outBlocks
 	}
 
 	set signKey [binary encode hex $key]
-	set account [::nano::address::fromPublicKey $accountPubKey]
 
-	foreach blockHash [dict keys [dict get $::nano::account::pending $accountPubKey]] {
+	foreach blockHash [dict keys $pendingBlocks] {
 		lappend outBlocks [receive $account $blockHash $signKey]
 	}
 
 	return $outBlocks
+}
+
+proc ::nano::account::setRepresentative {account representative signKey} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
+
+	set frontierInfo [getFrontier $account]
+	dict with frontierInfo {}
+
+	set blockArgs [list account $account \
+	                    representative $representative \
+	                    signKey $signKey \
+	                    previous $frontierHash \
+	]
+	dict set blockArgs -json true
+
+	set block [::nano::block::create::setRepresentative {*}$blockArgs]
+
+	set newFrontierHash [dict get [json::json2dict $block] "_blockHash"]
+
+	setFrontier $account $newFrontierHash $balance $representative
+
+	return $block
 }
