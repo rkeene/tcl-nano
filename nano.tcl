@@ -297,7 +297,36 @@ proc ::nano::block::json::toBlock {blockJSON} {
 }
 
 proc ::nano::block::dict::fromJSON {blockJSON} {
-	tailcall ::json::json2dict $blockJSON
+	set retval [::json::json2dict $blockJSON]
+
+	if {[dict get $retval "type"] eq "send"} {
+		set balance [dict get $retval "balance"]
+		set balance [format %lli "0x$balance"]
+		dict set retval "balance" $balance
+	}
+
+	# Parse out the work data
+	if {[dict get $retval "type"] in {send receive change state}} {
+		set workDataBasedOn "previous"
+	}
+
+	if {[dict get $retval "type"] eq "state" && [dict get $retval "previous"] eq "0000000000000000000000000000000000000000000000000000000000000000" && [dict get $retval "link"] eq "0000000000000000000000000000000000000000000000000000000000000000"} {
+		set workDataBasedOn "account"
+	}
+
+	if {[dict get $retval "type"] eq "open"} {
+		set workDataBasedOn "account"
+	}
+
+	if {[info exists workDataBasedOn]} {
+		if {$workDataBasedOn eq "previous"} {
+			dict set retval "_workData" [dict get $retval "previous"]
+		} else {
+			dict set retval "_workData" [::nano::address::toPublicKey [dict get $retval "account"]]
+		}
+	}
+
+	return $retval
 }
 
 proc ::nano::block::json::fromDict {blockDict} {
@@ -358,6 +387,14 @@ proc ::nano::block::json::fromDict {blockDict} {
 				}
 
 				set block($field) [string tolower $block($field)]
+			}
+			"balance" {
+				if {$block(type) in {send receive change open}} {
+					set balanceFormatStr %032llx
+				} else {
+					set balanceFormatStr %lli
+				}
+				set block($field) [string toupper [format $balanceFormatStr "$block($field)"]]
 			}
 		}
 
@@ -427,22 +464,30 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 				block(source) \
 				block(representative) \
 				block(account)
+
+			set block(_workData) $block(account)
 		}
 		"send" {
 			binary scan $blockData H64a32H32 \
 				block(previous) \
 				block(destination) \
 				block(balance)
+
+			set block(_workData) $block(previous)
 		}
 		"receive" {
 			binary scan $blockData H64H64 \
 				block(previous) \
 				block(source)
+
+			set block(_workData) $block(previous)
 		}
 		"change" {
 			binary scan $blockData H64a32 \
 				block(previous) \
 				block(representative)
+
+			set block(_workData) $block(previous)
 		}
 		default {
 			return -code error "Invalid block type: $block(type)"
@@ -764,7 +809,7 @@ proc ::nano::block::dict::validateWork {blockDict} {
 proc ::nano::block::json::validateWork {blockJSON} {
 	set blockDict [::nano::block::dict::fromJSON $blockJSON]
 
-	tailcall ::nano::block::dict::validate $blockDict
+	tailcall ::nano::block::dict::validateWork $blockDict
 }
 
 #   send from <account> to <account> previousBalance <balance>

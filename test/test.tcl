@@ -214,6 +214,40 @@ proc test_blocks {} {
 		return false
 	}
 
+	# JSON Parse an old-style block
+	## Parsing
+	set block [::nano::block::dict::fromJSON {
+		{
+			"account"     : "xrb_13ezf4od79h1tgj9aiu4djzcmmguendtjfuhwfukhuucboua8cpoihmh8byo",
+			"destination" : "xrb_1gys8r4crpxhp94n4uho5cshaho81na6454qni5gu9n53gksoyy1wcd4udyb",
+			"type"        : "send",
+			"previous"    : "F685856D73A488894F7F3A62BC3A88E17E985F9969629FF3FDD4A0D4FD823F24",
+			"work"        : "efe5bf06a43d0e0a",
+			"signature"   : "E373A1A38C9A239F4D2AAE52B40EF6DFC8BFEDCEB476588958073B7F462746854282FFE4B98FA6782E92798DAD0E5483C3356550A31339E1D7934B487EF4570D",
+			"balance"     : "00F035A9C7D818E7C34148C524FFFFEE"
+		}
+	}]
+	## Convert to JSON
+	set block [::nano::block::json::fromDict $block]
+
+	## Convert back and verify signature
+	set verify [::nano::block::json::verifySignature $block]
+	if {!$verify} {
+		puts "\[5.FAIL\] Got: $verify"
+		puts "\[5.FAIL\] Exp: true"
+
+		return false
+	}
+
+	## Verify Proof of Work
+	set verify [::nano::block::json::validateWork $block]
+	if {!$verify} {
+		puts "\[6.FAIL\] Got: $verify"
+		puts "\[6.FAIL\] Exp: true"
+
+		return false
+	}
+
 	return true
 }
 
