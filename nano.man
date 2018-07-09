@@ -23,6 +23,14 @@ If the optional
 argument is used and specified as true the result is a JSON representation,
 otherwise a Tcl dict representation is used.
 ..
+.de RR
+The
+.I representation
+portion of the command name may be one of
+.B dict
+or
+.BR json .
+..
 .PU
 .TH NANO N "@@SHORT_DATE@@" "nano @@VERS@@"
 .SH NAME
@@ -419,6 +427,7 @@ this package they are each treated separately.
 .RI " -> " blockData
 
 Converts from one of the internal representations (either Tcl dictionary or JSON) to a Nano block.
+.RR
 
 .TP
 .B ::nano::block::json::fromDict
@@ -444,6 +453,7 @@ Converts from a JSON object representation to a Tcl dictionary representation of
 
 Parses a Nano block and returns either a Tcl dictionary or a JSON object.
 .XN
+.RR
 
 .TP
 .BI ::nano::block:: representation ::sign
@@ -461,6 +471,7 @@ If the
 .B -signature
 option is used, return just the signature.
 .HB
+.RR
 
 .TP
 .BI ::nano::block:: representation ::verifySignature
@@ -474,6 +485,7 @@ attribute of that object.  This may not work correctly for old-style blocks
 unless you manually add the
 .B account
 attribute.
+.RR
 
 .TP
 .BI ::nano::block:: representation ::work
@@ -494,6 +506,7 @@ If the
 .B -work
 option is used, just return the work.
 .HB
+.RR
 
 .TP
 .BI ::nano::block:: representation ::validateWork
@@ -505,6 +518,7 @@ Validate the proof-of-work (PoW) in the object specified as
 with the attribute
 .B work
 is valid for the block passed in.
+.RR
 
 .TP
 .B ::nano::block::hash
@@ -875,7 +889,6 @@ puts "Generated seed: $seed"
 for {set index 0} {$index < 10} {incr index} {
 	set accountPrivateKey [::nano::key::fromSeed $seed $index -hex]
 	set accountAddress [::nano::address::fromPrivateKey $accountPrivateKey]
-
 	puts "    - $index: $accountAddress"
 }
 .EE

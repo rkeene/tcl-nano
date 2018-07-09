@@ -1,0 +1,20 @@
+#! /usr/bin/env bash
+
+set -e
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+tclNanoVersion=0.1
+tclNanoReleaseDate='09-Jul-2018'
+wikiPageManual='Manual'
+
+manPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoVersion}/g;s/@@SHORT_DATE@@/${tclNanoRelaseDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/' | tail -n +5)"
+
+oldManPage="$(fossil wiki export "${wikiPageManual}" 2>/dev/null)" || oldManPage=''
+
+if [ "${oldManPage}" != "${manPage}" ]; then
+	echo "${manPage}" | fossil wiki commit --mimetype text/x-fossil-wiki "${wikiPageManual}" || \
+		echo "${manPage}" | fossil wiki create --mimetype text/x-fossil-wiki "${wikiPageManual}"
+fi
+
+exit 0
