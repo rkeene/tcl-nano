@@ -1,0 +1,727 @@
+.de XI
+\\$1
+.BI \\$2 \\$3
+\\$4
+..
+.de HB
+The
+.B -hex
+and
+.B -binary
+options determine the formatting of the result.
+..
+.de XN
+The
+.B -xrb
+option causes all parsed addresses to be prefixed with the old-style "xrb_" address prefix, while the
+.B -nano
+option causes them to be prefixed with the new-style "nano_prefix".
+..
+.de JB
+If the optional
+.B -json
+argument is used and specified as true the result is a JSON representation,
+otherwise a Tcl dict representation is used.
+..
+.PU
+.TH NANO N "8 Jul 2018" "nano @@VERS@@"
+.SH NAME
+nano \- Tcl bindings for Nano
+.SH SYNOPSIS
+
+.B nano::
+.in +2m
+.B address::
+.in +2m
+.B toPublicKey
+.I address
+.RB ? -hex | -binary ?
+.RB ? -verify | -no-verify ?
+.br
+.B fromPublicKey
+.I pubKey
+.RB ? -xrb | -nano ?
+.br
+.B fromPrivateKey
+.I privateKey
+.RB ? -xrb | -nano ?
+
+.in -2m
+.B key::
+.in +2m
+.B newSeed
+.RB ? -hex | -binary ?
+.br
+.B newKey
+.RB ? -hex | -binary ?
+.br
+.B fromSeed
+.I seed
+.RI ? index ?
+.RB ? -hex | -binary ?
+.br
+.B publicKeyFromPrivateKey
+.I privateKey
+.RB ? -hex | -binary ?
+
+.in -2m
+.B block::
+.in +2m
+.B json::toBlock
+.I blockJSON
+.br
+.B json::fromDict
+.I blockDict
+.br
+.B json::fromBlock
+.I blockData
+.RB ? -xrb | -nano ?
+.XI ? -type= blockType ?
+.XI ? -signKey= privateKey ?
+.br
+.B json::sign
+.I blockJSON
+.I privateKey
+.RB ? -update | -signature " ?" -hex | binary ??
+.br
+.B json::verifySignature
+.I blockJSON
+.br
+.B json::work
+.I blockJSON
+.RB ? -update | -work " ?" -hex | -binary ??
+.br
+.B json::validateWork
+.I blockJSON
+
+.B dict::toBlock
+.I blockDict
+.br
+.B dict::fromJSON
+.I blockJSON
+.br
+.B dict::fromBlock
+.I blockData
+.RB ? -xrb | -nano ?
+.XI ? -type= blockType ?
+.XI ? -signKey= privateKey ?
+.br
+.B dict::sign
+.I blockDict
+.I privateKey
+.RB ? -update | -signature " ?" -hex | binary ??
+.br
+.B dict::verifySignature
+.I blockDict
+.br
+.B dict::work
+.I blockDict
+.RB ? -update | -work " ?" -hex | -binary ??
+.br
+.B dict::validateWork
+.I blockDict
+
+.B hash
+.I blockData
+.RB ? -hex | -binary ?
+.br
+.B signBlockHash
+.I blockHash
+.I privateKey 
+.RB ? -hex | -binary ?
+.br
+.B sign
+.I blockData
+.I privateKey
+.RB ? -hex | -binary ?
+.br
+.B verifyBlockHash
+.I blockHash
+.I signature
+.I publicKey
+.br
+.B verify
+.I blockData
+.I signature
+.I publicKey
+
+.B create::send
+.I args
+.br
+.B create::receive
+.I args
+.br
+.B create::setRepresentative
+.I args
+
+.in -2m
+.B work::
+.in +2m
+.B fromWorkData
+.I blockHashOrPublicKey
+.br
+.B fromBlock
+.I blockData
+.br
+.B validate
+.I workData
+.I work
+
+.in -2m
+.B account::
+.in +2m
+.B setFrontier
+.I account
+.I frontierHash
+.I balance
+.I representative
+.br
+.B getFrontier
+.I account
+.br
+.B getFrontier
+.I account
+.RB ? frontierHash | balance | representative ?
+.br
+.B addPending
+.I account
+.I blockHash
+.I amount
+.br
+.B getPending
+.I account
+.RI ? blockHash ?
+.br
+.B clearPending
+.I account
+.RI ? blockHash ?
+
+.B receive
+.I account
+.I blockHash
+.I privateKey
+.br
+.B receiveAllPending
+.I account
+.I privateKey
+.br
+.B send
+.I fromAccount
+.I toAccount
+.I amount
+.I privateKey
+.br
+.B setRepresentative
+.I account
+.I representative
+.I privateKey
+
+.in -2m
+.in -2m
+
+.SH DESCRIPTION
+.I Nano
+is a low-latency payment platform that requires minimal resources.  This
+package provides bindings for interacting with the Nano network from
+.IR Tcl .
+It uses Ed25519 with Blake2b as the cryptographic hashing primitive (rather
+than the normal construction of Ed25519 with the SHA3-512 cryptographic
+hashing function) for digital signatures.
+
+.SH PROCEDURES
+.SS Addresses
+.TP
+.B ::nano::address::toPublicKey
+.I address
+.RB ? -hex | -binary ?
+.RB ? -verify | -no-verify ?
+.BI " -> " publicKey
+
+Converts a Nano address to a public key.  The
+.B -hex
+option indicates that the public key should be returned in hexidecimal form.
+The
+.-B -binary
+option indicates that the public key should be returned in binary form.
+The
+.B -verify
+option verifies the checksum embedded in the Nano address before returning.
+The
+.B -no-verify
+option inhibits verifying the checksum embedded in the Nano address.
+
+.TP
+.B ::nano::address::fromPublicKey
+.I pubKey
+.RB ? -xrb | -nano ?
+.BI " -> " address
+
+Converts a public key to a Nano address. The
+.-B -xrb
+option specifies that the returned address should be prefixed with the
+old-style "xrb_" prefix, where the
+.B -nano
+option specifies that the returned address should be prefixed with the
+new-style "nano_" prefix.
+
+.TP
+.B ::nano::address::fromPrivateKey
+.I privateKey
+.RB ? -xrb | -nano ?
+.BI " -> " address
+
+Converts a private key to a Nano address.  It accepts the same arguments as
+.BR fromPublicKey .
+
+.SS Key Management
+.TP
+.B ::nano::key::newSeed
+.RB ? -hex | -binary ?
+.RI "-> " seed
+
+Generates a new seed.  A seed is a 256-bit bitfield which, along with a 32-bit
+index, is used to derive enumerated keys from a single point of entropy.  See
+the
+.B fromSeed
+procedure.
+.HB
+
+.TP
+.B ::nano::key::newKey
+.RB ? -hex | -binary ?
+.RI " -> " privateKey
+
+Generates a new private key.  A private key can be used to sign transactions,
+which can then be verified with its cooresponding public key (see
+.BR publicKeyFromPrivateKey ).
+This procedure is normally not used, but rather private keys are derived
+from a
+.I seed
+and
+.I index
+pair using the
+.B fromSeed
+procedure.
+.HB
+
+.TP
+.B ::nano::key::fromSeed
+.I seed
+.RI ? index ?
+.RB ? -hex | -binary ?
+.RI " -> " privateKey
+
+Derive a private key from the seed specified as
+.I seed
+and the
+.I index
+indicated.  This procedure is deterministic (i.e., the same
+.I seed
+and
+.I index
+will always give you the same private key).  This procedure is used to derive
+many keypairs from a single user-managed piece of data, so the user does not
+have to manage multiple private keys.  If the
+.I index
+is not specified it defaults to
+.BR 0 .
+.HB
+
+.TP
+.B ::nano::key::publicKeyFromPrivateKey
+.I privateKey
+.RB ? -hex | -binary ?
+.RI " -> " publicKey
+
+Converts a private key into its corresponding public key.  Normally Ed25519
+private keys are a concatencation of the private and public keys, however in
+this package they are each treated separately.
+.HB
+
+.SS Low-level Block
+.TP
+.BI ::nano::block:: representation ::toBlock
+.I blockRepresentation
+.RI " -> " blockData
+
+Converts from one of the internal representations (either Tcl dictionary or JSON) to a Nano block.
+
+.TP
+.B ::nano::block::json::fromDict
+.I blockDict
+.RI " -> " blockJSON
+
+Converts from a Tcl dictionary representation to a JSON representation of a block.
+
+.TP
+.B ::nano::block::dict::fromJSON
+.I blockJSON
+.RI " -> " blockDict
+
+Converts from a JSON object representation to a Tcl dictionary representation of a block.
+
+.TP
+.BI ::nano::block:: representation ::fromBlock
+.I blockData
+.RB ? -xrb | -nano ?
+.XI ? -type= blockType ?
+.XI ? -signKey= privateKey ?
+.RI " -> " blockRepresentation
+
+Parses a Nano block and returns either a Tcl dictionary or a JSON object.
+.XN
+
+.TP
+.BI ::nano::block:: representation ::sign
+.I blockRepresentation
+.I privateKey
+.RB ? -update | -signature " ?" -hex | binary ??
+.RI " -> " signature | blockJSON
+
+Sign a block, in either Tcl dictionary or JSON representation, with the specified
+.IR privateKey .
+If the
+.B -update
+option is used, return the object with the updated attribute.
+If the
+.B -signature
+option is used, return just the signature.
+.HB
+
+.TP
+.BI ::nano::block:: representation ::verifySignature
+.I blockRepresentation
+.RI " -> " boolean
+
+Verify the signature on a block, in either Tcl dictionary or JSON
+representation, matches the public key specified in the
+.B account
+attribute of that object.  This may not work correctly for old-style blocks
+unless you manually add the
+.B account
+attribute.
+
+.TP
+.BI ::nano::block:: representation ::work
+.I blockRepresentation
+.RB ? -update | -work " ?" -hex | binary ??
+.RI " -> " work | blockRepresentation
+
+Generate proof-of-work (PoW) required to submit a given block to the network.
+Nano uses PoW to increase the cost of submitting blocks to the network to cut
+down on spam.  The
+.I work
+that is computed is based on the hash of the previous block on this chain, or
+if there is no previous block on this chain (i.e., because it is the first
+block on an account) the public key of the account.  If the
+.B -update
+option is used, return the object with the updated attribute.
+If the
+.B -work
+option is used, just return the work.
+.HB
+
+.TP
+.BI ::nano::block:: representation ::validateWork
+.I blockRepresentation
+.RI " -> " boolean
+
+Validate the proof-of-work (PoW) in the object specified as
+.I blockRepresentation
+with the attribute
+.B work
+is valid for the block passed in.
+
+.TP
+.B ::nano::block::hash
+.I blockData
+.RB ? -hex | -binary ?
+.RI " -> " blockHash
+
+Compute the cryptographic hash of a block.  The cryptographic hashing
+algorithm used for Nano is Blake2b.  Blocks are typically identified
+by their hash (i.e., content addressable).
+.HB
+
+.TP
+.B ::nano::block::signBlockHash
+.I blockHash
+.I privateKey
+.RB ? -hex | -binary ?
+.RI " -> " signature
+
+Compute an Ed25519-with-Blake2b signature of a given block hash specified as
+.I blockHash
+with the private key specified as
+.IR privateKey .
+In Nano, signed blocks are signed by signing the block's hash thus all that is
+needed to sign a block is its hash and the private key that corresponds to the
+account.
+.B NOTE:  Ensure that the
+.I privateKey
+.B specified matches the account the block belongs to.
+.HB
+
+.TP
+.B ::nano::block::sign
+.I blockData
+.I privateKey
+.RB ? -hex | -binary ?
+.RI " -> " signature
+
+This is a convienence procedure which computes the hash of a block given as
+.IR blockData ,
+and then calls
+.BR signBlockHash .
+.HB
+
+.TP
+.B ::nano::block::verifyBlockHash
+.I blockHash
+.I signature
+.I publicKey
+.RI " -> " boolean
+
+Verify that a block hash
+.RI ( blockHash )
+was signed
+.RI ( signature )
+by an account holding the private key that
+corresponds to the public key specified as
+.IR publicKey .
+
+.TP
+.B ::nano::block::verify
+.I blockData
+.I signature
+.I publicKey
+.RI " -> " boolean
+
+This is a convienence procedure which computes the hash of a block given as
+.IR blockData ,
+and then calls
+.BR verifyBlockHash .
+
+.TP
+.B ::nano::block::create::send
+.BI "from "            address
+.BI "to "              address
+.BI "previous "        blockHash
+.BI "representative "  address
+.BI "previousBalance " integer
+.BI "amount "          integer
+?
+.BI "-json "           boolean
+?
+.RI " -> " blockJSON | blockDict
+
+This is a low-level interface for creating blocks which correspond to sending
+Nano from one account to another.  It constructs a block which sends the
+.B amount
+specified from the
+.B from
+address to the destination
+.RB ( to ).
+The previous block's hash must be specified as the
+.I blockHash
+following
+.BR previous .
+Additionally the balance of the account at the previous block must be supplied
+as the integer argument to
+.BR previousBalance .
+All balance amounts are in units of
+.BR raw .
+.JB
+
+.TP
+.B ::nano::block::create::receive
+.BI "to "              address
+.BI "sourceBlock "     blockHash
+.BI "previous "        blockHash
+.BI "representative "  address
+.BI "previousBalance " integer
+.BI "amount "          integer
+?
+.BI "-json "           boolean
+?
+.RI " -> " blockJSON | blockDict
+
+This is a low-level interface for creating blocks which correspond to receiving
+(pocketing) Nano previously sent from another account to the account specified
+as the
+.I address
+supplied to the
+.B to
+argument.  It constructs a block which receives the amount of Nano specified
+as the
+.B amount
+argument.
+The block hash
+.RI ( blockHash )
+of the send block which was used to send the Nano to this account must be
+specified as the argument to the
+.B sourceBlock
+option.
+The previous block's hash must be specified as the
+.I blockHash
+following
+.BR previous .
+Additionally the balance of the account at the previous block must be supplied
+as the integer argument to
+.BR previousBalance .
+All balance amounts are in units of
+.BR raw .
+.JB
+
+.TP
+.B ::nano::block::create::setRepresentative
+.BI "account "         address
+.BI "previous "        blockHash
+.BI "representative "  address
+?
+.BI "-json "           boolean
+?
+.RI " -> " blockJSON | blockDict
+
+This is a low-level interface for creating blocks which correspond to an
+explicit change of representative.  Representatives in Nano are used as
+part of the Delegated Proof-of-Stake (dPoS) consensus mechanism which is
+used by the Nano network to determine which block (if any) out of many possible
+subordinate blocks in a chain are valid.  So that every account holder does
+not have to be online to vote for valid transactions, an account may delegate
+another account to vote its stake on its behalf.  That delegate is called
+a representative.  An account may change its representative at any time by
+issuing a block with a new representative, such as a send or receive block,
+or by issuing an explicit change of representative block.  This procedure
+creates an explicit change of representative block for the
+.B account
+specified.  It changes to the delegate to the
+.B representative
+specified.  Further, the
+.I blockHash
+of the previous block must be specified as the argument to
+.BR previous .
+.JB
+
+.SS Work Generation
+.TP
+.B ::nano::work::fromWorkData
+.I blockHashOrPublicKey
+.RI " -> " work
+
+Create proof-of-work (PoW) from a block hash or public key.  Which one is used
+depends on whether or not there are any other blocks in this account's chain.
+If this is the first block in this account's chain then the public key of the
+account is used, otherwise the hash of the blocks predecessor
+.RI ( previous )
+is used.  The specific value needed should be accessible from the
+.B _workData
+member of a JSON object or Tcl dictionary.  Note that this attribute (and all
+attributes that begin with an underscore) should be discarded when
+sending the block outside of the Tcl process.
+
+.TP
+.B ::nano::work::fromBlock
+.I blockData
+.RI " -> " work
+
+This is a convienence procedure which computes work data (either a block hash
+or a public key) for a given block and then calls
+.BR fromWorkData .
+
+.TP
+.B ::nano::work::validate
+.I workData
+.I work
+.RI " -> " boolean
+
+This procedure validates that the supplied
+.I work
+is valid for the supplied
+.IR workData ,
+which is either a block hash or an account public key.  For more information
+see the descript of
+.BR fromWorkData .
+
+
+.SS High-level Account
+.TP
+.B :nano::account::setFrontier
+.I account
+.I frontierHash
+.I balance
+.I representative
+
+This procedure is used as part of the High-level Account interface.  It sets the
+.IR frontier ,
+which is the block hash
+.RI ( frontierHash )
+and data
+.RI ( balance ", " representative )
+associated with that block that corresponds to the head of an account's chain.
+
+.TP
+.B :nano::account::getFrontier
+.I account
+.RI " -> " frontierInfo
+
+.TP
+.B :nano::account::getFrontier
+.I account
+.RB ? frontierHash | balance | representative ?
+.RI " -> " frontierHash | balance | representative
+
+.TP
+.B :nano::account::addPending
+.I account
+.I blockHash
+.I amount
+
+.TP
+.B :nano::account::getPending
+.I account
+.RI ? blockHash ?
+.RI " -> " listOfDicts
+
+.TP
+.B ::nano::account::clearPending
+.I account
+.RI ? blockHash ?
+
+.TP
+.B :nano::account::receive
+.I account
+.I blockHash
+.I privateKey
+.RI " -> " blockJSON | blockDict
+
+.TP
+.B :nano::account::receiveAllPending
+.I account
+.I privateKey
+.RI " -> " listOfBlockJSON | listOfBlockDict
+
+.TP
+.B :nano::account::send
+.I fromAccount
+.I toAccount
+.I amount
+.I privateKey
+.RI " -> " blockJSON | blockDict
+
+.TP
+.B ::nano::account::setRepresentative
+.I account
+.I representative
+.I privateKey
+.RI " -> " blockJSON | blockDict
+
+.SH EXAMPLES
+.SS Example 1
+.SS Example 2
+.SS Example 3
+
+.SH AUTHOR
+.Sp
+Roy Keene
+.RI < rkeene@nano.org >
