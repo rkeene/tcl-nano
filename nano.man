@@ -240,7 +240,7 @@ digital signatures, rather than the common construction of Ed25519 with the
 SHA2-512 cryptographic hashing function.
 
 Nano implements a "blockchain", which is a cryptographic linked-list, by
-identifying every "block" by its crytographic hash and providing a pointer from
+identifying every "block" by its cryptographic hash and providing a pointer from
 every block to its predecessor in the "chain" as part of the hashed data.
 
 This predecessors is referred to here as the "previous" block.  In Nano,
@@ -276,13 +276,13 @@ a block with a unique
 .I previous
 value).  Since voting is an active and on-going process that occurs on the Nano
 peer-to-peer network, participants must be online to vote their stake.  As this
-is often inconvienent or impossible, stakeholders may select another
+is often inconvenient or impossible, stakeholders may select another
 stakeholder to vote their share of the network.  This delegate is referred to
 as a
 .IR representative .
 
 Representatives should be chosen carefully by stakeholders since malicious
-representatives may attempt to gather voting power and destablize the Nano
+representatives may attempt to gather voting power and destabilize the Nano
 network by altering decisions made by consensus previously.
 
 Nano accounts are referred to by address.  A Nano address starts with the
@@ -300,7 +300,7 @@ A
 .I wallet
 is a conceptual entity that is used to refer to a
 .IR seed ,
-which is a random 256-bit number that can be used to derive mulitple
+which is a random 256-bit number that can be used to derive multiple
 private/public keypairs from.
 
 Balances in Nano are stored in a 128-bit integer value.  There are various
@@ -316,7 +316,7 @@ Nano addresses are composed of a prefix (either
 or
 .RB \(dq xrb_ \(dq)
 and 300 bits of base32 encoded data.  The 300-bits of base32 encoded data
-produce a string that is 6 charectars long using the base32 alphabet
+produce a string that is 6 characters long using the base32 alphabet
 .BR 13456789abcdefghijkmnopqrstuwxyz .
 The format of these 300 bits are
 .EX
@@ -346,7 +346,7 @@ public key (in binary format), followed by reversing the bytes.
 
 Converts a Nano address to a public key.  The
 .B -hex
-option indicates that the public key should be returned in hexidecimal form.
+option indicates that the public key should be returned in hexadecimal form.
 The
 .-B -binary
 option indicates that the public key should be returned in binary form.
@@ -386,7 +386,7 @@ Converts a private key to a Nano address.  It accepts the same arguments as
 .RB ? -hex | -binary ?
 .RI "-> " seed
 
-Generates a new seed.  A seed is a 256-bit bitfield which, along with a 32-bit
+Generates a new seed.  A seed is a 256-bit bit-field which, along with a 32-bit
 index, is used to derive enumerated keys from a single point of entropy.  See
 the
 .B fromSeed
@@ -399,7 +399,7 @@ procedure.
 .RI " -> " privateKey
 
 Generates a new private key.  A private key can be used to sign transactions,
-which can then be verified with its cooresponding public key (see
+which can then be verified with its corresponding public key (see
 .BR publicKeyFromPrivateKey ).
 This procedure is normally not used, but rather private keys are derived
 from a
@@ -441,7 +441,7 @@ is not specified it defaults to
 .RI " -> " publicKey
 
 Converts a private key into its corresponding public key.  Normally Ed25519
-private keys are a concatencation of the private and public keys, however in
+private keys are a concatenation of the private and public keys, however in
 this package they are each treated separately.
 .HB
 
@@ -582,7 +582,7 @@ account.
 .RB ? -hex | -binary ?
 .RI " -> " signature
 
-This is a convienence procedure which computes the hash of a block given as
+This is a convenience procedure which computes the hash of a block given as
 .IR blockData ,
 and then calls
 .BR signBlockHash .
@@ -610,7 +610,7 @@ corresponds to the public key specified as
 .I publicKey
 .RI " -> " boolean
 
-This is a convienence procedure which computes the hash of a block given as
+This is a convenience procedure which computes the hash of a block given as
 .IR blockData ,
 and then calls
 .BR verifyBlockHash .
@@ -738,7 +738,7 @@ sending the block outside of the Tcl process.
 .I blockData
 .RI " -> " work
 
-This is a convienence procedure which computes work data (either a block hash
+This is a convenience procedure which computes work data (either a block hash
 or a public key) for a given block and then calls
 .BR fromWorkData .
 
