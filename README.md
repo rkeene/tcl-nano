@@ -16,3 +16,13 @@ for interoperating with other Nano implementations.
 
    - [Downloads](/wiki/Downloads)
    - [Manual](/wiki/Manual)
+
+Dependencies
+------------
+Tcl Nano depends on few other packages:
+
+   - A C compiler (such as _gcc_)
+   - A POSIX shell (such as _bash_)
+   - The [Tcl interpreter](https://www.tcl-lang.org/)
+   - The Tcl package [json](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/json&type=tree)
+   - The Tcl package [json::write](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/json&type=tree)
