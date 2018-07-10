@@ -3,12 +3,20 @@
 
 #include "randombytes.h"
 
-long long getrandom_impl(void *buf, unsigned int buflen);
+long getrandom_impl(void *buf, unsigned int buflen);
 void randombytes(unsigned char *buffer, unsigned long long length) {
-	long long gr_ret;
+	long gr_ret;
 	int errorCount = 0;
 
-	if (length > UINT_MAX || length > LONG_LONG_MAX) {
+	/*
+	 * Ensure that the number of bytes requested can fit within
+	 * the types we pass to other calls.
+	 *
+	 * The interface required by randombytes() used by TweetNaCl
+	 * does not give us any way to handle errors.  However,
+	 * no buffer should exceed these amounts.
+	 */
+	if (length > UINT_MAX || length > LONG_MAX) {
 		Tcl_Panic("Buffer length is too large");
 	}
 
@@ -40,7 +48,7 @@ void randombytes(unsigned char *buffer, unsigned long long length) {
 #    include <sys/random.h>
 #  endif
 
-long long getrandom_impl(void *buf, unsigned int buflen) {
+long getrandom_impl(void *buf, unsigned int buflen) {
 	ssize_t gr_ret;
 
 	gr_ret = getrandom(buf, buflen, 0);
@@ -51,7 +59,7 @@ long long getrandom_impl(void *buf, unsigned int buflen) {
 #elif defined(HAVE_GETENTROPY)
 #include <unistd.h>
 
-long long getrandom_impl(void *buf, unsigned int buflen) {
+long getrandom_impl(void *buf, unsigned int buflen) {
 	int ge_ret;
 
 	if (buflen > 255) {
@@ -67,7 +75,7 @@ long long getrandom_impl(void *buf, unsigned int buflen) {
 }
 #elif defined(HAVE_CRYPTGENRANDOM) && 0
 #include <tcl.h>
-long long getrandom_impl(void *buf, unsigned int buflen) {
+long getrandom_impl(void *buf, unsigned int buflen) {
 	Tcl_Panic("Incomplete CryptGenRandom");
 }
 #else
@@ -83,9 +91,9 @@ long long getrandom_impl(void *buf, unsigned int buflen) {
 # ifdef HAVE_UNISTD_H
 #    include <unistd.h>
 # endif
-long long getrandom_impl(void *buf, unsigned int buflen) {
+long getrandom_impl(void *buf, unsigned int buflen) {
 	ssize_t read_ret;
-	long long retval;
+	long retval;
 	int fd = -1;
 
 	fd = open("/dev/urandom", O_RDONLY);
