@@ -45,6 +45,7 @@ function generateDownloads() {
 	echo '========'
 	echo ''
 	echo "Current release: **${version}**"
+	echo ''
 	echo '  - Downloads:'
 	echo "    - [Source](/uv/${tarball}) <small>(SHA2-256: ${sha256})</small>"
 	echo ''
@@ -72,7 +73,7 @@ updatePage "${wikiPageManual}" "${manPage}"
 
 # Generate the new download page entry
 downloadsPage="$(generateDownloads "${tclNanoVersion}" "${tclNanoTarball}" "${tclNanoTarballSHA256}")"
-updatePage "${wikiPageDownloads}" "${downloadsPage}" 'text/markdown'
+updatePage "${wikiPageDownloads}" "${downloadsPage}" 'markdown'
 
 # Push changes if any have been made
 fossil sync
