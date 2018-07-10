@@ -24,7 +24,7 @@ VERS=""
 #     @@UTIL@@ becomes the utility name ${UTIL}
 #     @@VERS@@ becomes the utility version
 #     @@DATE@@ becomes the current date
-DOCS="README.txt ChangeLog"
+DOCS="README.md"
 DOC_HDR="HEADER"
 
 # These files follow the same convention as DOCS, but don't have the header
