@@ -46,4 +46,4 @@ AFTER="build/post.sh"
 TMPS="*.out HEADER"
 
 # Upload to the following path in Fossil
-UPLOAD_TO='releases/@@ARCHIVE_FILENAME@@'
+UPLOAD_TO='releases/@@ARCHIVE_FILE_NAME@@'
