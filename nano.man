@@ -310,6 +310,31 @@ The most common unit for users to use is called
 .RI \(dq Nano \(dq,
 one of which is equal to 1e30 raw.
 
+.SS Addresses
+Nano addresses are composed of a prefix (either
+.RB \(dq nano_ \(dq
+or
+.RB \(dq xrb_ \(dq)
+and 300 bits of base32 encoded data.  The 300-bits of base32 encoded data
+produce a string that is 6 charectars long using the base32 alphabet
+.BR 13456789abcdefghijkmnopqrstuwxyz .
+The format of these 300 bits are
+.EX
+
+  [Padding (4 bits: 0)].[Public Key (256 bits)].[Checksum (40 bits)]
+
+.EE
+For example the public key
+.B DC1512154EB72112B8CC230D7B8C7DD467DA78E4763182D6CAFAADB14855A5E8
+would be encoded as
+.B 0000.DC1512154EB72112B8CC230D7B8C7DD467DA78E4763182D6CAFAADB14855A5E8.9C46A37418
+which when encoded in base32 and the prefix added produces the address
+.BR nano_3q1o4acnxfs34cwerarfhg89uo59ubwgaxjjiddeoyofp767dbhamj5c8x1r .
+The checksum is computed as a 5 byte (40 bit) Blake2b hash of the 256-bit
+public key (in binary format), followed by reversing the bytes.
+
+
+
 .SH PROCEDURES
 .SS Addresses
 .TP
