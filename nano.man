@@ -904,7 +904,7 @@ used to generate a block that changes the representative for the given
 Its interface is subject to change and not considered stable.
 
 .SH EXAMPLES
-.SS Example 1
+.SS Example 1: Generate a new seed and derive 10 addresses from it
 .EX
 package require nano @@VERS@@
 
@@ -917,9 +917,6 @@ for {set index 0} {$index < 10} {incr index} {
 	puts "    - $index: $accountAddress"
 }
 .EE
-
-.SS Example 2
-.SS Example 3
 
 .SH AUTHOR
 .Sp
