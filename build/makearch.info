@@ -44,3 +44,6 @@ AFTER="build/post.sh"
 
 # Files matching these (space-seperated) patterns are deleted
 TMPS="*.out HEADER"
+
+# Upload to the following path in Fossil
+UPLOAD_TO='releases/@@ARCHIVE_FILENAME@@'
