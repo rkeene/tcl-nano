@@ -93,7 +93,7 @@ updatePage "${wikiPageManual}" "${developmentManPage}"
 # Generate a PDF manual page for the release version, if it does not already exist
 if ! fossilUVExists "${tclNanoReleaseManualPDF}"; then
 	tclNanoReleaseManualPDFTmp="$(mktemp -u)"
-	fossil uv cat "${tclNanoReleaseTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar -xOf - '*/nano.man' | groff -mandoc -Tpdf > "${tclNanoReleaseManualPDFTmp}"
+	fossil uv cat "${tclNanoReleaseTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar --wildcards -xOf - '*/nano.man' | groff -mandoc -Tpdf > "${tclNanoReleaseManualPDFTmp}"
 	fossil uv add "${tclNanoReleaseManualPDFTmp}" --as "${tclNanoReleaseManualPDF}"
 	rm -f "${tclNanoReleaseManualPDFTmp}"
 fi
