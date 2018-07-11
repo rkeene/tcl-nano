@@ -101,6 +101,9 @@ nano \- Tcl bindings for Nano
 .br
 .B json::validateWork
 .I blockJSON
+.br
+.B json::filter
+.I blockJSON
 
 .B dict::toBlock
 .I blockDict
@@ -461,6 +464,15 @@ Converts from one of the internal representations (either Tcl dictionary or JSON
 .RI " -> " blockJSON
 
 Converts from a Tcl dictionary representation to a JSON representation of a block.
+
+.TP
+.B ::nano::block::json::filter
+.I blockJSON
+.RI " -> " blockJSON
+
+Filters out JSON object attributes which are not suitable for using with other
+implementations, such as
+.IR _comment ", " _workData ", and " _blockHash .
 
 .TP
 .B ::nano::block::dict::fromJSON

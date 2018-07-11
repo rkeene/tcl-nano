@@ -816,6 +816,19 @@ proc ::nano::block::json::validateWork {blockJSON} {
 	tailcall ::nano::block::dict::validateWork $blockDict
 }
 
+proc ::nano::block::json::filter {blockJSON} {
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+	set blockDict [dict filter $blockDict script {key _} {
+		if {[string match "_*" $key]} {
+			continue
+		}
+
+		return -level 0 true
+	}]
+	set blockJSON [::nano::block::json::fromDict $blockDict]
+	return $blockJSON
+}
+
 #   send from <account> to <account> previousBalance <balance>
 #        amount <amount> sourceBlock <sourceBlockHash>
 #        previous <previousBlockHash> ?representative <representative>?
