@@ -270,7 +270,7 @@ proc test_blocks {} {
 	}
 
 	# A typical block cycle
-	set seed DB4FDFD0F2ABED9E18ACF7FF20EC83ABAD34AAC6A77270A09EDEA5786E4CCF11
+	set seed FC11FC93CA62BEB6F39290D476798757CE9A767E6CF598AE2F9D0976944736A8
 	set key [::nano::key::fromSeed $seed]
 	set account [::nano::address::fromPrivateKey $key]
 	set frontierHash $seed
@@ -280,7 +280,7 @@ proc test_blocks {} {
 	set block [::nano::block::json::filter $block]
 	set block [::nano::block::dict::fromJSON $block]
 	set signature [dict get $block "signature"]
-	set signature_expected "1E7AA03DB5CFCB1692A23D8F0DD29C854640B8954E96ECC84BD535D8D1FAADC7FE1008BB3473BE0DC328723E224D40F4B7B309CB78C33CAFC64635CA725FA50E"
+	set signature_expected "5A3B477463080E11E7CB9FAEE5A900BEC93D33A0679F76FC6FC2F29211D0AF5C8421D0DFC3744FFDAD21F29FA0203B8007594B9DDCF70921B63EA66712963D0A"
 	if {$signature ne $signature_expected} {
 		puts "\[9.FAIL\] Got: $signature"
 		puts "\[9.FAIL\] Exp: $signature_expected"
