@@ -12,6 +12,9 @@ namespace eval ::nano::block::dict {}
 namespace eval ::nano::block::create {}
 namespace eval ::nano::work {}
 namespace eval ::nano::account {}
+namespace eval ::nano::node {}
+namespace eval ::nano::ledger {}
+namespace eval ::nano::ledger::lmdb {}
 namespace eval ::nano::rpc {}
 namespace eval ::nano::rpc::client {}
 namespace eval ::nano::balance {}
@@ -1139,6 +1142,104 @@ proc ::nano::account::setRepresentative {account representative signKey} {
 	setFrontier $account $newFrontierHash $balance $representative
 
 	return $block
+}
+
+# Ledger
+proc ::nano::ledger::setNodeBackend {handle} {
+}
+
+proc ::nano::ledger::lmdb::openDatabase {} {
+}
+
+# Node Configuration
+proc ::nano::node::_configDictToJSON {configDict {prefix ""}} {
+	set values [list]
+	foreach key [dict keys $configDict] {
+		set value [dict get $configDict $key]
+		switch -- ${prefix}${key} {
+			"rpc" - "node" - "opencl" - "node/logging" {
+				set value [_configDictToJSON $value "$key/"]
+			}
+			"node/preconfigured_peers" - "node/preconfigured_representatives" - "node/work_peers" {
+				set value [json::write array {*}[lmap item $value {
+					json::write string $item
+				}]]
+			}
+			default {
+				set value [json::write string $value]
+			}
+		}
+
+		lappend values $key $value
+	}
+
+	set json [json::write object {*}$values]
+
+	return $json
+}
+
+proc ::nano::node::_defaultConfig {network} {
+	return [dict create \
+		"version"        2 \
+		"rpc_enable"     false \
+		"rpc"           [dict create \
+			"address"        "::ffff:127.0.0.1" \
+			"port"           7076 \
+		] \
+	]
+}
+
+proc ::nano::node::_loadConfigFile {file network} {
+	set json "{}"
+	catch {
+		set fd [open $file]
+		set json [read $fd]
+	}
+	catch {
+		close $fd
+	}
+
+	if {![info exists ::nano::node::configuration]} {
+		set ::nano::node::configuration [_defaultConfig $network]
+	}
+
+	set configuration [::json::json2dict $json]
+
+	set ::nano::node::configuration [dict merge $::nano::node::configuration $configuration]
+
+	return $::nano::node::configuration
+}
+
+proc ::nano::node::_saveConfigFile {file args} {
+	if {[llength $args] == 0} {
+		set configDict $::nano::node::configuration
+	} elseif {[llength $args] == 1} {
+		set configDict [lindex $args 0]
+	} else {
+		return -code error "wrong # args: _saveConfigFile <file> ?<configDict>?"
+	}
+
+	set json [_configDictToJSON $configDict]
+	set tmpfile "${file}.new"
+	set fd [open "${tmpfile}" "w"]
+	puts $fd $json
+	close $fd
+	file rename -force -- "${tmpfile}" "${file}"
+
+	return true
+}
+
+proc ::nano::node::configure {network args} {
+	# Set default options
+	set info(-configDirectory) [file normalize ~/RaiBlocks]
+
+	# Parse options to the configure
+	array set info $args
+
+	# Load configuration file
+	set configFile [file join $info(-configDirectory) "config.json"]
+
+	_loadConfigFile $configFile $network
 }
 
 # RPC Client
