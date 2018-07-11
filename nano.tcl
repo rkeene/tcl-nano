@@ -1143,19 +1143,23 @@ proc ::nano::account::setRepresentative {account representative signKey} {
 
 # RPC Client
 proc ::nano::rpc::client::init args {
-	dict with args {}
-
-	if {![info exists url]} {
-		set url {http://localhost:7076/}
+	if {![info exists ::nano::rpc::client::config]} {
+		set ::nano::rpc::client::config [dict create \
+		    url {http://localhost:7076/} \
+		]
 	}
 
-	set ::nano::rpc::client::url $url
+	if {[llength $args] > 0} {
+		set ::nano::rpc::client::config [dict merge $::nano::rpc::client::config $args]
+	}
+
+	return true
 }
 
 proc ::nano::rpc::client {action args} {
 	::nano::rpc::client::init
 
-	set rpcURL $::nano::rpc::client::url
+	set rpcURL [dict get $::nano::rpc::client::config "url"]
 
 	set jsonArgs [list]
 	foreach {key value} $args {
