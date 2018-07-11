@@ -1285,34 +1285,19 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	set humanUnitMultiplier [dict get $::nano::balance::_conversion $humanUnit]
 
 	if {$raw > [expr {$humanUnitMultiplier / 10000000}]} {
-		set balance [toUnit $raw $humanUnit 7]
 		set baseUnit $humanUnit
-		set balance [expr {entier($balance * 1000000)}]
-		set labels {u m "" K M G T}
 	} else {
-		set balance $raw
 		set baseUnit "raw"
-		set labels {"" K M G T}
 	}
 
-	set labelIdx -1
-	foreach label $labels {
-		incr $labelIdx
+	set balance [toUnit $raw $baseUnit $decimals]
+	set work [split $balance "."]
+	set leading  [lindex $work 0]
+	set trailing [string trimright [lindex $work 1] "0"]
+	set balance [join [list $leading $trailing] "."]
+	set balance [string trimright $balance "."]
 
-		if {$balance < 1000} {
-			break
-		}
-
-		set balance [expr {$balance / 1000}]
-	}
-
-	set unit "${label}${baseUnit}"
-	set unit [normalizeUnitName $unit]
-
-	set balance [toUnit $raw $unit $decimals]
-	set balance [string trimright $balance "0."]
-
-	set result [list $balance $unit]
+	set result [list $balance $baseUnit]
 
 	return $result
 }
