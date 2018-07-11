@@ -167,6 +167,7 @@ nano \- Tcl bindings for Nano
 .in +2m
 .B fromWorkData
 .I blockHashOrPublicKey
+.RB ? -hex | -binary ?
 .br
 .B fromBlock
 .I blockData
@@ -720,6 +721,7 @@ of the previous block must be specified as the argument to
 .TP
 .B ::nano::work::fromWorkData
 .I blockHashOrPublicKey
+.RB ? -hex | -binary ?
 .RI " -> " work
 
 Create proof-of-work (PoW) from a block hash or public key.  Which one is used
@@ -732,6 +734,7 @@ is used.  The specific value needed should be accessible from the
 member of a JSON object or Tcl dictionary.  Note that this attribute (and all
 attributes that begin with an underscore) should be discarded when
 sending the block outside of the Tcl process.
+.HB
 
 .TP
 .B ::nano::work::fromBlock

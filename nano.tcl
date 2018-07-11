@@ -731,6 +731,7 @@ proc ::nano::block::json::verifySignature {blockJSON} {
 
 proc ::nano::block::dict::work {blockDict args} {
 	set outputMode "work"
+	set outputFormat "hex"
 	foreach arg $args {
 		switch -- $arg {
 			"-update" {
@@ -925,13 +926,32 @@ proc ::nano::block::create::setRepresentative {args} {
 }
 
 # Work generation functions
-proc ::nano::work::fromWorkData {blockHashOrPublicKey} {
+proc ::nano::work::fromWorkData {blockHashOrPublicKey args} {
+	set outputFormat "hex"
+	foreach arg $args {
+		switch -- $arg {
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
 	if {[string length $blockHashOrPublicKey] != $::nano::block::hashLength} {
 		set blockHashOrPublicKey [binary decode hex $blockHashOrPublicKey]
 	}
 
-	set work [binary encode hex [::nano::internal::generateWork $blockHashOrPublicKey]]
-	set work [string tolower $work]
+	set work [::nano::internal::generateWork $blockHashOrPublicKey]
+
+	if {$outputFormat eq "hex"} {
+		set work [binary encode hex $work]
+		set work [string tolower $work]
+	}
 
 	return $work
 }
