@@ -1145,10 +1145,139 @@ proc ::nano::account::setRepresentative {account representative signKey} {
 }
 
 # Ledger
-proc ::nano::ledger::setNodeBackend {handle} {
+proc ::nano::ledger::lmdb::init {configDict} {
+	package require lmdb
+
+	array set config $configDict
+
+	if {[info exists config(configDirectory)]} {
+		set config(file) [file join $config(configDirectory) $config(file)]
+	}
+	set config(file) [file normalize $config(file)]
+
+	set envHandle [lmdb env]
+	$envHandle set_maxdbs 32
+	$envHandle set_mapsize 1099511627776
+	$envHandle open -path $config(file) -nosubdir true -readonly false
+
+	set lmdbInfo [dict create \
+		envHandle     $envHandle \
+	]
+
+	set handle [list apply {{lmdbInfo proc args} {
+		tailcall ::nano::ledger::lmdb::$proc $lmdbInfo {*}$args
+	}} $lmdbInfo]
+
+	return $handle
 }
 
-proc ::nano::ledger::lmdb::openDatabase {} {
+proc ::nano::ledger::lmdb::_transaction {lmdbInfo table cursorVar code} {
+	set table [split $table /]
+	set readOnly true
+	foreach arg [lrange $table 1 end] {
+		switch -- $arg {
+			"write" {
+				set readOnly false
+			}
+			"read" {
+				set readOnly true
+			}
+		}
+	}
+	set table [lindex $table 0]
+
+	set envHandle [dict get $lmdbInfo envHandle]
+	set dbHandle [lmdb open -env $envHandle -name $table]
+	set sessionHandle [$envHandle txn -readonly $readOnly]
+	set cursor [$dbHandle cursor -txn $sessionHandle]
+
+	uplevel 1 [list set $cursorVar $cursor]
+	set retcode [catch [list uplevel 1 $code] retval options]
+
+	$cursor close
+	if {$retcode == 0} {
+		$sessionHandle commit
+	} else {
+		if {$readOnly} {
+			$sessionHandle reset
+		} else {
+			$sessionHandle abort
+		}
+	}
+	$sessionHandle close
+	$dbHandle close -env $envHandle
+
+	if {$retcode == 0} {
+		return $retval
+	}
+
+	return {*}$options $retval
+}
+
+proc ::nano::ledger::lmdb::getPending {lmdbInfo account args} {
+	set accountPubKey [::nano::address::toPublicKey $account -binary]
+	set searchKey $accountPubKey
+
+	if {[llength $args] > 0} {
+		set blockHash [lindex $args 0]
+		if {[string length $blockHash] != $::nano::block::hashLength} {
+			set blockHash [binary decode hex $blockHash]
+
+			append searchKey $blockHash
+		}
+
+		set args [lrange $args 1 end]
+	}
+
+	set retval [list]
+
+	_transaction $lmdbInfo "pending" cursor {
+		set work [$cursor getBinary -set_range $searchKey]
+		while true {
+			set key [lindex $work 0]
+			set value [lindex $work 1]
+
+			set keyAccountPubKey [string range $key 0 31]
+			if {$keyAccountPubKey ne $accountPubKey} {
+				break
+			}
+
+			set keyBlockHash [string range $key 32 63]
+			if {[info exists blockHash] && $keyBlockHash ne $blockHash} {
+				break
+			}
+
+			set from [string range $value 0 31]
+			set amount [string range $value 32 47]
+
+			set work [$cursor getBinary -next]
+
+			set itemDict [dict create \
+				amount [format "%lli" 0x[binary encode hex $amount]] \
+				from   [::nano::address::fromPublicKey $from] \
+			]
+
+			if {[info exists blockHash]} {
+				set retval $itemDict
+
+				break
+			}
+
+			set keyBlockHashHex [string toupper [binary encode hex $keyBlockHash]]
+
+			dict set retval $keyBlockHashHex $itemDict
+		}
+	}
+
+	if {[info exists blockHash] && [llength $args] > 0} {
+		set retval [dict get $retval {*}$args]
+	}
+
+	return $retval
+}
+
+proc ::nano::ledger::lmdb::clearPending {lmdbInfo account args} {
+	set accountPubKey [::nano::address::toPublicKey $account -hex]
 }
 
 # Node Configuration
@@ -1157,7 +1286,7 @@ proc ::nano::node::_configDictToJSON {configDict {prefix ""}} {
 	foreach key [dict keys $configDict] {
 		set value [dict get $configDict $key]
 		switch -- ${prefix}${key} {
-			"rpc" - "node" - "opencl" - "node/logging" {
+			"rpc" - "node" - "opencl" - "node/logging" - "node/database" {
 				set value [_configDictToJSON $value "$key/"]
 			}
 			"node/preconfigured_peers" - "node/preconfigured_representatives" - "node/work_peers" {
@@ -1178,17 +1307,50 @@ proc ::nano::node::_configDictToJSON {configDict {prefix ""}} {
 	return $json
 }
 
-proc ::nano::node::_defaultConfig {network} {
-	return [dict create \
+proc ::nano::node::_defaultConfig {basis network} {
+	# XXX:TODO: Finish setting up the defaults
+	set default_topLevel [dict create \
 		"version"        2 \
 		"rpc_enable"     false \
-		"rpc"           [dict create \
-			"address"        "::ffff:127.0.0.1" \
-			"port"           7076 \
-		] \
 	]
+
+	catch {
+		set basis_rpc [dict create]
+		set basis_rpc [dict get $basis "rpc"]
+	}
+	set default_rpc [dict create \
+		"address"        "::ffff:127.0.0.1" \
+		"port"           7076 \
+	]
+
+	catch {
+		set basis_node [dict create]
+		set basis_node [dict get $basis "node"]
+	}
+	set default_node [dict create]
+
+	catch {
+		set basis_node_database [dict create]
+		set basis_node_database [dict get $basis "node" "database"]
+	}
+	set default_node_database [dict create \
+		"backend"        "lmdb" \
+		"file"           "data.ldb" \
+	]
+
+	set basis [dict merge $default_topLevel $basis]
+	set basis_rpc [dict merge $default_rpc $basis_rpc]
+	set basis_node [dict merge $default_node $basis_node]
+	set basis_node_database [dict merge $default_node_database $basis_node_database]
+
+	dict set basis rpc $basis_rpc
+	dict set basis node $basis_node
+	dict set basis node database $basis_node_database
+
+	return $basis
 }
 
+# Side-effect:  Sets ::nano::node::configuration
 proc ::nano::node::_loadConfigFile {file network} {
 	set json "{}"
 	catch {
@@ -1199,13 +1361,11 @@ proc ::nano::node::_loadConfigFile {file network} {
 		close $fd
 	}
 
-	if {![info exists ::nano::node::configuration]} {
-		set ::nano::node::configuration [_defaultConfig $network]
-	}
-
 	set configuration [::json::json2dict $json]
 
-	set ::nano::node::configuration [dict merge $::nano::node::configuration $configuration]
+	set configuration [_defaultConfig $configuration $network]
+
+	set ::nano::node::configuration $configuration
 
 	return $::nano::node::configuration
 }
@@ -1229,8 +1389,24 @@ proc ::nano::node::_saveConfigFile {file args} {
 	return true
 }
 
+proc ::nano::node::setLedgerHandle {handle} {
+	set procs {
+		getPending
+	}
+
+	namespace eval ::nano::node::ledger {}
+
+	foreach proc $procs {
+		proc ::nano::node::ledger::$proc args [concat [list tailcall {*}$handle $proc] {{*}$args}]
+	}
+}
+
 proc ::nano::node::configure {network args} {
 	# Set default options
+	## XXX:TODO: Handle other networks
+	if {$network ne "main"} {
+		return -code error "Only main network is supported right now"
+	}
 	set info(-configDirectory) [file normalize ~/RaiBlocks]
 
 	# Parse options to the configure
@@ -1240,13 +1416,24 @@ proc ::nano::node::configure {network args} {
 	set configFile [file join $info(-configDirectory) "config.json"]
 
 	_loadConfigFile $configFile $network
+
+	# Determine database backend and access information
+	set database_config  [dict get $::nano::node::configuration "node" "database"]
+	set database_backend [dict get $database_config "backend"]
+	if {![dict exists $database_config "configDirectory"]} {
+		dict set database_config "configDirectory" $info(-configDirectory)
+	}
+
+	set dbHandle [::nano::ledger::${database_backend}::init $database_config]
+	::nano::node::setLedgerHandle $dbHandle
 }
 
 # RPC Client
+## Side-effect: Sets ::nano::rpc::client::config
 proc ::nano::rpc::client::init args {
 	if {![info exists ::nano::rpc::client::config]} {
 		set ::nano::rpc::client::config [dict create \
-		    url {http://localhost:7076/} \
+		    url "http://localhost:7076/" \
 		]
 	}
 
