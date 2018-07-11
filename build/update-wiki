@@ -46,12 +46,26 @@ function generateDownloads() {
 	echo ''
 	echo "Current release: **${version}**"
 	echo ''
+	echo "  - [Manual](/uv/manuals/tcl-nano-${version}-manual.pdf)"
 	echo '  - Downloads:'
 	echo "    - [Source](/uv/${tarball}) <small>(SHA2-256: ${sha256})</small>"
 	echo ''
 	echo "Older releases may be found in the [archives](/uvlist)."
 
 	return 0
+}
+
+# Determine if a Fossil UV file exists
+function fossilUVExists() {
+	local file
+
+	file="$1"
+
+	if fossil uv cat "${file}" 2>/dev/null | grep '^' >/dev/null; then
+		return 0
+	fi
+
+	return 1
 }
 
 # Ensure we are operating in the root of the checkout
@@ -62,20 +76,34 @@ fossil sync
 fossil uv sync
 
 # Determine latest release
-tclNanoVersion="$(fossil uv ls | sed 's/^releases\/tcl-nano-\(.*\)\.tar\.gz/\1/;t;d' | sort --version-sort | tail -n 1)"
-tclNanoTarball="releases/tcl-nano-${tclNanoVersion}.tar.gz"
-tclNanoReleaseDate="$(fossil uv cat "${tclNanoTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar -tvf - 2>/dev/null | awk '{ print $4 }')"
-tclNanoTarballSHA256="$(fossil uv cat "${tclNanoTarball}" 2>/dev/null | openssl dgst -sha256 | sed 's/.*= *//')"
+tclNanoReleaseVersion="$(fossil uv ls | sed 's/^releases\/tcl-nano-\(.*\)\.tar\.gz/\1/;t;d' | sort --version-sort | tail -n 1)"
+tclNanoReleaseManualPDF="manuals/tcl-nano-${tclNanoReleaseVersion}.pdf"
+tclNanoReleaseTarball="releases/tcl-nano-${tclNanoReleaseVersion}.tar.gz"
+tclNanoReleaseDate="$(fossil uv cat "${tclNanoReleaseTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar -tvf - 2>/dev/null | awk '{ print $4 }')"
+tclNanoReleaseTarballSHA256="$(fossil uv cat "${tclNanoReleaseTarball}" 2>/dev/null | openssl dgst -sha256 | sed 's/.*= *//')"
 
-# Generate the new manual page entry
-manPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoVersion}/g;s/@@SHORT_DATE@@/${tclNanoRelaseDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/g' | tail -n +5)"
-updatePage "${wikiPageManual}" "${manPage}"
+# Determine current development version
+tclNanoDevelopmentVersion="$(awk '/^AC_INIT\(/{ sub(/^AC_INIT\([^,]*, */, ""); sub(/[,\)].*$/, ""); print; }' < configure.ac)"
+tclNanoDevelopmentDate="$(date +%d-%b-%Y)"
+
+# Generate the new manual page entry for the development version
+developmentManPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoDevelopmentVersion}/g;s/@@SHORT_DATE@@/${tclNanoDevelopmentDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/g' | tail -n +5)"
+updatePage "${wikiPageManual}" "${developmentManPage}"
+
+# Generate a PDF manual page for the release version, if it does not already exist
+if ! fossilUVExists "${tclNanoReleaseManualPDF}"; then
+	tclNanoReleaseManualPDFTmp="$(mktemp -u)"
+	fossil uv cat "${tclNanoReleaseTarball}" 2>/dev/null | gzip -dc 2>/dev/null | tar -xOf - '*/nano.man' | groff -mandoc -Tpdf > "${tclNanoReleaseManualPDFTmp}"
+	fossil uv add "${tclNanoReleaseManualPDFTmp}" --as "${tclNanoReleaseManualPDF}"
+	rm -f "${tclNanoReleaseManualPDFTmp}"
+fi
 
 # Generate the new download page entry
-downloadsPage="$(generateDownloads "${tclNanoVersion}" "${tclNanoTarball}" "${tclNanoTarballSHA256}")"
+downloadsPage="$(generateDownloads "${tclNanoReleaseVersion}" "${tclNanoReleaseTarball}" "${tclNanoReleaseTarballSHA256}")"
 updatePage "${wikiPageDownloads}" "${downloadsPage}" 'markdown'
 
 # Push changes if any have been made
 fossil sync
+fossil uv sync
 
 exit 0
