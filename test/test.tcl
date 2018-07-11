@@ -309,6 +309,80 @@ proc test_work {} {
 	return true
 }
 
+proc test_balances {} {
+	set balance 1001500000000000000000000000000
+	set balance [::nano::balance::toUnit $balance Nano 3]
+	set balance_expected "1.001"
+	if {$balance != $balance_expected} {
+		puts "\[1.FAIL\] Got: $balance"
+		puts "\[1.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+
+	set balance 1001510000000000000000000000000
+	set balance [::nano::balance::toUnit $balance Nano 3]
+	set balance_expected "1.002"
+	if {$balance != $balance_expected} {
+		puts "\[2.FAIL\] Got: $balance"
+		puts "\[2.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+
+	set balance 100150000000000000000000000000000000000
+	set balance [::nano::balance::toUnit $balance unano 3]
+	set balance_expected "100150000000000000000.000"
+	if {$balance != $balance_expected} {
+		puts "\[3.FAIL\] Got: $balance"
+		puts "\[3.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+	set balance 10
+	set balance [::nano::balance::toRaw $balance Nano]
+	set balance_expected 10000000000000000000000000000000
+	if {$balance != $balance_expected} {
+		puts "\[4.FAIL\] Got: $balance"
+		puts "\[4.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+
+	set balance 1.000000000000000000001
+	set balance [::nano::balance::toRaw $balance Nano]
+	set balance_expected 1000000000000000000001000000000
+	if {$balance != $balance_expected} {
+		puts "\[5.FAIL\] Got: $balance"
+		puts "\[5.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+
+	set unitName [::nano::balance::normalizeUnitName Mnano]
+	set unitName_expected "Nano"
+	if {$unitName != $unitName_expected} {
+		puts "\[6.FAIL\] Got: $unitName"
+		puts "\[6.FAIL\] Exp: $unitName_expected"
+
+		return false
+	}
+
+	set balance 3.3346
+	set balance [::nano::balance::toRaw $balance unano]
+	set balance_expected $balance
+	set balance [::nano::balance::toHuman $balance]
+	set balance [::nano::balance::toRaw {*}$balance]
+	if {$balance != $balance_expected} {
+		puts ""
+		puts "\[7.FAIL\] Got: $balance"
+		puts "\[7.FAIL\] Exp: $balance_expected"
+
+		return false
+	}
+	return true
+}
+
 set tests {
 	selftest
 	signatures
@@ -317,6 +391,7 @@ set tests {
 	addressformat
 	blocks
 	work
+	balances
 }
 
 foreach test $tests {
@@ -325,13 +400,13 @@ foreach test $tests {
 
 	if {[catch {
 		if {![test_$test]} {
-			puts "\[FAIL\] $test"
+			puts "\r\[FAIL\] $test"
 			exit 1
 		} else {
 			puts "\r\[ OK \] $test"
 		}
 	} testErr]} {
-		puts "\[ERR \] $test: $testErr"
+		puts "\r\[ERR!\] $test: $testErr"
 		exit 1
 	}
 }

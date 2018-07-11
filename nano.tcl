@@ -12,6 +12,9 @@ namespace eval ::nano::block::dict {}
 namespace eval ::nano::block::create {}
 namespace eval ::nano::work {}
 namespace eval ::nano::account {}
+namespace eval ::nano::rpc {}
+namespace eval ::nano::rpc::client {}
+namespace eval ::nano::balance {}
 
 # Constants
 set ::nano::block::stateBlockPreamble [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
@@ -1103,4 +1106,180 @@ proc ::nano::account::setRepresentative {account representative signKey} {
 	setFrontier $account $newFrontierHash $balance $representative
 
 	return $block
+}
+
+# RPC Client
+proc ::nano::rpc::client::init args {
+	dict with args {}
+
+	if {![info exists url]} {
+		set url {http://localhost:7076/}
+	}
+
+	set ::nano::rpc::client::url $url
+}
+
+proc ::nano::rpc::client {action args} {
+	::nano::rpc::client::init
+
+	set rpcURL $::nano::rpc::client::url
+
+	set jsonArgs [list]
+	foreach {key value} $args {
+		switch -exact -- $key {
+			"-count" {}
+			"-accounts" {
+				set valueAsStrings [lmap valueItem $value { json::write string $valueItem }]
+				set value [json::write array {*}$valueAsStrings]
+			}
+			default {
+				set value [json::write string $value]
+			}
+		}
+		set key [string range $key 1 end]
+
+		lappend jsonArgs $key $value
+	}
+
+	set query [json::write object action [json::write string $action] {*}$jsonArgs]
+
+	catch {
+		set token [http::geturl $rpcURL -query $query]
+		set ncode [http::ncode $token]
+		set data [http::data $token]
+	} error
+	if {![info exists data]} {
+		set ncode -1
+		set data $error
+	}
+
+	if {[info exists token]} {
+		http::cleanup $token
+	}
+
+	if {$ncode ne "200"} {
+		return -code error "$ncode: $data"
+	}
+
+	set data [json::json2dict $data]
+
+	return $data
+}
+
+# Account balance manipulation
+set ::nano::balance::_conversion {
+	GNano 1000000000000000000000000000000000000000
+	MNano 1000000000000000000000000000000000000
+	Gnano 1000000000000000000000000000000000
+	Gxrb  1000000000000000000000000000000000
+	KNano 1000000000000000000000000000000000
+	Nano  1000000000000000000000000000000
+	_USER 1000000000000000000000000000000
+	NANO  1000000000000000000000000000000
+	Mnano 1000000000000000000000000000000
+	Mxrb  1000000000000000000000000000000
+	Mrai  1000000000000000000000000000000
+	knano 1000000000000000000000000000
+	kxrb  1000000000000000000000000000
+	mNano 1000000000000000000000000000
+	nano  1000000000000000000000000
+	xrb   1000000000000000000000000
+	uNano 1000000000000000000000000
+	mnano 1000000000000000000000
+	mxrb  1000000000000000000000
+	unano 1000000000000000000
+	uxrb  1000000000000000000
+	Traw  1000000000000
+	Graw  1000000000
+	Mraw  1000000
+	Kraw  1000
+	raw   1
+}
+
+proc ::nano::balance::toUnit {raw toUnit {decimals 0}} {
+	set divisor [dict get $::nano::balance::_conversion $toUnit]
+
+	if {$decimals == 0} {
+		set balance [expr {entier(($raw / ($divisor * 1.0)) + 0.5)}]
+	} else {
+		set balance [expr {$raw / ($divisor * 1.0)}]
+		set balance [format "%.${decimals}f" $balance]
+	}
+
+	return $balance
+}
+
+proc ::nano::balance::toRaw {balance fromUnit} {
+	set multiplier [dict get $::nano::balance::_conversion $fromUnit]
+
+	# Determine how long the multiplier is
+	set zeros [expr {entier(log10($multiplier))}]
+
+	# Find the location of the decimal point (or add it)
+	set decimal [string first "." $balance]
+	if {$decimal == -1} {
+		append balance "."
+
+		set decimal [string first "." $balance]
+	}
+
+	# Ensure that the balance has atleast the right number of trailing zeros
+	append balance [string repeat "0" $zeros]
+
+	# Remove the decimal point
+	set balance [string replace $balance $decimal $decimal]
+
+	# Get the subset of the string that corresponds to the balance
+	set balance [string range $balance 0 [expr {$zeros + $decimal - 1}]]
+
+	# Convert to a integer type
+	set balance [expr {entier($balance)}]
+
+	return $balance
+}
+
+proc ::nano::balance::normalizeUnitName {unit} {
+	set multiplier [dict get $::nano::balance::_conversion $unit]
+	foreach {unitName multiplierCheck} $::nano::balance::_conversion {
+		if {$multiplierCheck == $multiplier} {
+			return $unitName
+		}
+	}
+}
+
+proc ::nano::balance::toHuman {raw {decimals 3}} {
+	set humanUnit [normalizeUnitName _USER]
+	set humanUnitMultiplier [dict get $::nano::balance::_conversion $humanUnit]
+
+	if {$raw > [expr {$humanUnitMultiplier / 10000000}]} {
+		set balance [toUnit $raw $humanUnit 7]
+		set baseUnit $humanUnit
+		set balance [expr {entier($balance * 1000000)}]
+		set labels {u m "" K M G T}
+	} else {
+		set balance $raw
+		set baseUnit "raw"
+		set labels {"" K M G T}
+	}
+
+	set labelIdx -1
+	foreach label $labels {
+		incr $labelIdx
+
+		if {$balance < 1000} {
+			break
+		}
+
+		set balance [expr {$balance / 1000}]
+	}
+
+	set unit "${label}${baseUnit}"
+	set unit [normalizeUnitName $unit]
+
+	set balance [toUnit $raw $unit $decimals]
+	set balance [string trimright $balance "0."]
+
+	set result [list $balance $unit]
+
+	return $result
 }
