@@ -1303,6 +1303,7 @@ proc ::nano::ledger::lmdb::_foreach {lmdbInfo table cursorVar keyVar valueVar ar
 	return
 }
 
+# XXX:TODO: Track down why this speeds things up >10x
 interp alias {} ::nano::ledger::lmdb::_magicSpeedup {} time
 
 proc ::nano::ledger::lmdb::getPending {lmdbInfo args} {
