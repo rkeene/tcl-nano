@@ -1277,7 +1277,66 @@ proc ::nano::ledger::lmdb::getPending {lmdbInfo account args} {
 }
 
 proc ::nano::ledger::lmdb::clearPending {lmdbInfo account args} {
-	set accountPubKey [::nano::address::toPublicKey $account -hex]
+	set accountPubKey [::nano::address::toPublicKey $account -binary]
+
+	if {[llength $args] > 1} {
+		return -code error "wrong # args: clearPending <lmdbInfo> <account> ?<blockHash>?"
+	}
+
+	if {[llength $args] == 1} {
+		set blockHash [lindex $args 0]
+		if {[string length $blockHash] != $::nano::block::hashLength} {
+			set blockHash [binary decode hex $blockHash]
+		}
+		set searchKey "${accountPubKey}${blockHash}"
+
+		set numberOfRowsDeleted 0
+		_transaction $lmdbInfo "pending/write" cursor {
+			while true {
+				if {[catch {
+					$cursor getBinary -set $searchKey
+				} err]} {
+					if {[string match "ERROR: MDB_NOTFOUND: *" $err]} {
+						break
+					}
+
+					return -code error $err
+				}
+
+				$cursor del
+
+				incr numberOfRowsDeleted
+			}
+		}
+
+		return $numberOfRowsDeleted
+	}
+
+	set numberOfRowsDeleted 0
+	set blockHashDict [getPending $lmdbInfo $account]
+	foreach blockHash [dict keys $blockHashDict] {
+		incr numberOfRowsDeleted [clearPending $lmdbInfo $account $blockHash]
+	}
+
+	return $numberOfRowsDeleted
+}
+
+proc ::nano::ledger::lmdb::addPending {lmdbInfo account blockHash args} {
+	set accountPubKey [::nano::address::toPublicKey $account -binary]
+
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	set lmdbKey "${accountPubKey}${blockHash}"
+	set fromHex [::nano::address::toPublicKey [dict get $args from] -hex]
+	set amountHex [format %032llx [dict get $args amount]]
+	set lmdbData [binary format H64H32 $fromHex $amountHex]
+
+	_transaction $lmdbInfo "pending/write" cursor {
+		$cursor putBinary $lmdbKey $lmdbData
+	}
+	
 }
 
 # Node Configuration
@@ -1392,6 +1451,8 @@ proc ::nano::node::_saveConfigFile {file args} {
 proc ::nano::node::setLedgerHandle {handle} {
 	set procs {
 		getPending
+		clearPending
+		addPending
 	}
 
 	namespace eval ::nano::node::ledger {}
