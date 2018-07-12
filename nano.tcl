@@ -1192,7 +1192,7 @@ proc ::nano::ledger::lmdb::_transaction {lmdbInfo table cursorVar code} {
 	set cursor [$dbHandle cursor -txn $sessionHandle]
 
 	uplevel 1 [list set $cursorVar $cursor]
-	set retcode [catch [list uplevel 1 $code] retval options]
+	set retcode [catch {uplevel 1 $code} retval options]
 
 	$cursor close
 	if {$retcode == 0} {
@@ -1214,9 +1214,105 @@ proc ::nano::ledger::lmdb::_transaction {lmdbInfo table cursorVar code} {
 	return {*}$options $retval
 }
 
-proc ::nano::ledger::lmdb::getPending {lmdbInfo account args} {
-	set accountPubKey [::nano::address::toPublicKey $account -binary]
-	set searchKey $accountPubKey
+proc ::nano::ledger::lmdb::_foreach {lmdbInfo table cursorVar keyVar valueVar args} {
+	set code [lindex $args end]
+	set args [lrange $args 0 end-1]
+
+	if {[llength $args] == 0} {
+		set initialize [list getBinary "-first"]
+	} else {
+		if {[lindex $args 0] eq "-set"} {
+			set checkKeyEqual [lindex $args 1]
+		}
+
+		set initialize [list getBinary {*}$args]
+	}
+	set iterate [list getBinary "-next"]
+
+	_transaction $lmdbInfo $table cursor {
+		if {$cursorVar ne ""} {
+			uplevel 1 [list set $cursorVar $cursor]
+		}
+
+		for {
+			if {[catch {
+				set work [$cursor {*}$initialize]
+			} err]} {
+				if {[string match "ERROR: MDB_NOTFOUND: *" $err]} {
+					return
+				}
+
+				return -code error $err
+			}
+		} true {
+			if {[catch {
+				set work [$cursor {*}$iterate]
+			} err]} {
+				if {[string match "ERROR: MDB_NOTFOUND: *" $err]} {
+					break
+				}
+
+				return -code error $err
+			}
+		} {
+			unset -nocomplain key
+
+			if {[info exists checkKeyEqual]} {
+				set key [lindex $work 0]
+				if {$key ne $checkKeyEqual} {
+					break
+				}
+			}
+
+			if {$keyVar ne ""} {
+				if {![info exists key]} {
+					set key [lindex $work 0]
+				}
+				uplevel 1 [list set $keyVar $key]
+			}
+
+			if {$valueVar ne ""} {
+				set value [lindex $work 1]
+				uplevel 1 [list set $valueVar $value]
+			}
+
+			catch {uplevel 1 $code} retval options
+
+			switch -- [dict get $options "-code"] {
+				4 - 0 {
+					# TCL_CONTINUE or TCL_OK
+					continue
+				}
+				1 {
+					# TCL_ERROR, pass it on
+					dict set options "-level" 1
+					return {*}$options $retval
+				}
+				2 {
+					# TCL_RETURN
+					return -level 2 $retval
+				}
+				3 {
+					# TCL_BREAK
+					break
+				}
+			}
+		}
+	}
+
+	return
+}
+
+interp alias {} ::nano::ledger::lmdb::_magicSpeedup {} time
+
+proc ::nano::ledger::lmdb::getPending {lmdbInfo args} {
+	if {[llength $args] > 0} {
+		set account [lindex $args 0]
+		set accountPubKey [::nano::address::toPublicKey $account -binary]
+		append searchKey $accountPubKey
+
+		set args [lrange $args 1 end]
+	}
 
 	if {[llength $args] > 0} {
 		set blockHash [lindex $args 0]
@@ -1231,41 +1327,49 @@ proc ::nano::ledger::lmdb::getPending {lmdbInfo account args} {
 
 	set retval [list]
 
-	_transaction $lmdbInfo "pending" cursor {
-		set work [$cursor getBinary -set_range $searchKey]
-		while true {
-			set key [lindex $work 0]
-			set value [lindex $work 1]
+	if {[info exists searchKey]} {
+		set searchKey [list "-set_range" $searchKey]
+	} else {
+		set searchKey [list]
+	}
 
-			set keyAccountPubKey [string range $key 0 31]
-			if {$keyAccountPubKey ne $accountPubKey} {
-				break
+	_foreach $lmdbInfo "pending" cursor key value {*}$searchKey {
+		set keyAccountPubKey [string range $key 0 31]
+		if {[info exists accountPubKey] && $keyAccountPubKey ne $accountPubKey} {
+			break
+		}
+
+		set keyBlockHash [string range $key 32 63]
+		if {[info exists blockHash] && $keyBlockHash ne $blockHash} {
+			break
+		}
+
+		set from [string range $value 0 31]
+		set amount [string range $value 32 47]
+
+		set itemDict [dict create \
+			amount [format "%lli" 0x[binary encode hex $amount]] \
+			from   [::nano::address::fromPublicKey $from] \
+		]
+
+		if {[info exists blockHash]} {
+			set retval $itemDict
+
+			break
+		}
+
+		set keyBlockHashHex [string toupper [binary encode hex $keyBlockHash]]
+
+		if {[info exists accountPubKey]} {
+			_magicSpeedup {
+				dict set retval $keyBlockHashHex [set itemDict]
 			}
+		} else {
+			set keyAccountPubKeyHex [string toupper [binary encode hex $keyAccountPubKey]]
 
-			set keyBlockHash [string range $key 32 63]
-			if {[info exists blockHash] && $keyBlockHash ne $blockHash} {
-				break
+			_magicSpeedup {
+				dict set retval $keyAccountPubKeyHex $keyBlockHashHex $itemDict
 			}
-
-			set from [string range $value 0 31]
-			set amount [string range $value 32 47]
-
-			set work [$cursor getBinary -next]
-
-			set itemDict [dict create \
-				amount [format "%lli" 0x[binary encode hex $amount]] \
-				from   [::nano::address::fromPublicKey $from] \
-			]
-
-			if {[info exists blockHash]} {
-				set retval $itemDict
-
-				break
-			}
-
-			set keyBlockHashHex [string toupper [binary encode hex $keyBlockHash]]
-
-			dict set retval $keyBlockHashHex $itemDict
 		}
 	}
 
@@ -1291,22 +1395,11 @@ proc ::nano::ledger::lmdb::clearPending {lmdbInfo account args} {
 		set searchKey "${accountPubKey}${blockHash}"
 
 		set numberOfRowsDeleted 0
-		_transaction $lmdbInfo "pending/write" cursor {
-			while true {
-				if {[catch {
-					$cursor getBinary -set $searchKey
-				} err]} {
-					if {[string match "ERROR: MDB_NOTFOUND: *" $err]} {
-						break
-					}
 
-					return -code error $err
-				}
+		_foreach $lmdbInfo "pending/write" cursor "" "" -set $searchKey {
+			$cursor del
 
-				$cursor del
-
-				incr numberOfRowsDeleted
-			}
+			incr numberOfRowsDeleted
 		}
 
 		return $numberOfRowsDeleted
@@ -1333,10 +1426,18 @@ proc ::nano::ledger::lmdb::addPending {lmdbInfo account blockHash args} {
 	set amountHex [format %032llx [dict get $args amount]]
 	set lmdbData [binary format H64H32 $fromHex $amountHex]
 
-	_transaction $lmdbInfo "pending/write" cursor {
-		$cursor putBinary $lmdbKey $lmdbData
+	set keyExists false
+	_foreach $lmdbInfo "pending" "" "" "" -set $lmdbKey {
+		set keyExists true
 	}
-	
+
+	if {!$keyExists} {
+		_transaction $lmdbInfo "pending/write" cursor {
+			$cursor putBinary $lmdbKey $lmdbData
+		}
+	}
+
+	return
 }
 
 # Node Configuration
