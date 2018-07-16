@@ -337,6 +337,130 @@ which when encoded in base32 and the prefix added produces the address
 The checksum is computed as a 5 byte (40 bit) Blake2b hash of the 256-bit
 public key (in binary format), followed by reversing the bytes.
 
+.SS Network
+The Nano network consists of two different peer-to-peer networks.  One for
+real-time block updates over UDP, and another for bulk ledger updates over
+TCP
+.RI ( bootstrapping ).
+The real-time network is a broadcast style network where every message sent
+over it are relayed to all other nodes.
+
+The customary and default port for the real-time/UDP network is 7075/udp, while
+the default port for the bootstrapping/TCP network is 7075/tcp.
+
+The format of the messages on both networks is the same, however not every
+type of message may be used on either network.  The
+.B keepalive
+message type is invalid on the TCP (bootstrapping) network and the
+.B bulk_pull
+message type is invalid on the UDP (real-time) network.  The format of
+message are an 8 byte header consisting of:
+.EX
+
+   struct {
+       uint8_t magicProtocol = 0x52;
+       uint8_t magicNetwork  = 0x41/0x42/0x43;
+       uint8_t versionMax;
+       uint8_t version;
+       uint8_t versionMin;
+       uint8_t messageType;
+       uint16_t extensions;
+   };
+
+.EE
+Where the
+.B magicProtocol
+field must be the value
+.B 0x52
+(which is ASCII 'R') and the
+.B magicNetwork
+field must be one of
+.BR 0x41 ", " 0x42 ", or " 0x43
+corresponding to one of the three Nano networks.  A value of
+.B 0x41
+(ASCII 'A') represents the Test network;  A value of
+.B 0x42
+(ASCII 'B') represents the Beta network;  A value of
+.B 0x43
+(ASCII 'C') represents the Main network.
+
+The various version fields control the relaying of the message to nodes running
+various versions of the Nano network protocol (distinct from the Nano reference
+implementation version).  The
+.B versionMax
+and
+.B versionMin
+fields indicate the inclusive range of acceptable versions to relay or broadcast
+this message to.  The
+.B version
+field indicates what version of the Nano protocol this node is using.
+
+The messageType field indicates what type of message is being relayed, and
+must conform to the following enumeration
+.TS
+box tab(:);
+cb cb cb cb
+c l l l.
+messageType:Name:On Bootstrap:On Realtime
+0x00:Invalid:Yes:Yes
+0x01:Not_A_Type:?:?
+0x02:Keepalive:No:Yes
+0x03:Publish:No:Yes
+0x04:Confirm_Req:No:Yes
+0x05:Confirm_Ack:No:Yes
+0x06:Bulk_Pull:Yes:No
+0x07:Bulk_Push:Yes:No
+0x08:Frontier_Req:Yes:No
+0x09:Bulk_Pull_Blocks:Yes:No
+.TE
+
+.B "TODO: Extensions"
+
+Following the message header comes the payload for the particular message
+type.
+
+.TP
+.B Invalid
+TODOC
+
+.TP
+.B Not_A_Type
+TODOC
+
+.TP
+.B Keepalive
+The Keepalive message requires exactly 8 IPv6 address and port number
+tuples to be sent as its payload.  The IPv6 addresses are each 128-bits
+(16-bytes) long and the port numbers are 16-bit integers sent in network byte
+order.  The payload for the Keepalive message type is 144 bytes in size.
+
+.TP
+.B Publish
+TODOC
+
+.TP
+.B Confirm_Req
+TODOC
+
+.TP
+.B Confirm_Ack
+TODOC
+
+.TP
+.B Bulk_Pull
+TODOC
+
+.TP
+.B Bulk_Push
+TODOC
+
+.TP
+.B Frontier_Req
+TODOC
+
+.TP
+.B Bulk_Pull_Blocks
+TODOC
 
 
 .SH PROCEDURES
