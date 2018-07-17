@@ -405,19 +405,19 @@ The messageType field indicates what type of message is being relayed, and
 must conform to the following enumeration
 .TS
 allbox tab(:);
-cb cb cb cb
-c l l l.
-messageType:Name:On Bootstrap:On Realtime
-0x00:Invalid:Yes:Yes
-0x01:Not_A_Type:?:?
-0x02:Keepalive:No:Yes
-0x03:Publish:No:Yes
-0x04:Confirm_Req:No:Yes
-0x05:Confirm_Ack:No:Yes
-0x06:Bulk_Pull:Yes:No
-0x07:Bulk_Push:Yes:No
-0x08:Frontier_Req:Yes:No
-0x09:Bulk_Pull_Blocks:Yes:No
+cb cb cb cb cb
+c l l l c.
+messageType:Name:On Bootstrap:On Realtime:Version
+0x00:Invalid:Yes:Yes:0+
+0x01:Not_A_Type:?:?:0+
+0x02:Keepalive:No:Yes:0+
+0x03:Publish:No:Yes:0+
+0x04:Confirm_Req:No:Yes:0+
+0x05:Confirm_Ack:No:Yes:0+
+0x06:Bulk_Pull:Yes:No:?
+0x07:Bulk_Push:Yes:No:?
+0x08:Frontier_Req:Yes:No:?
+0x09:Bulk_Pull_Blocks:Yes:No:11+
 .TE
 
 .B "TODO: Extensions"
