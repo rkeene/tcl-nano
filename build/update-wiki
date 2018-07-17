@@ -88,7 +88,11 @@ tclNanoDevelopmentVersion="$(awk '/^AC_INIT\(/{ sub(/^AC_INIT\([^,]*, */, ""); s
 tclNanoDevelopmentDate="$(date +%d-%b-%Y)"
 
 # Generate the new manual page entry for the development version
-developmentManPage="$(groff -mandoc -Thtml nano.man | sed -r 's@</*(body|html)( [^>]*|)>@@g;/<head>/,/<\/head>/ d' | sed "s/@@VERS@@/${tclNanoDevelopmentVersion}/g;s/@@SHORT_DATE@@/${tclNanoDevelopmentDate}/g" | sed 's/\[/\&#91;/g;s/\]/\&#93;/g' | tail -n +5)"
+developmentManPage="$(
+	sed "s/@@VERS@@/${tclNanoDevelopmentVersion}/g;s/@@SHORT_DATE@@/${tclNanoDevelopmentDate}/g" nano.man | \
+	/home/rkeene/devel/tcl-nano/build/work/pkgs/mandoc-1.14.2/INST/bin/mandoc -Thtml -Ofragment | \
+	sed 's/<div[^>]*>&#x00A0;<\/div>//g;s@\[@\&#91;@g;s@\]@\&#93;@g'
+)"
 updatePage "${wikiPageManual}" "${developmentManPage}"
 
 # Generate a PDF manual page for the release version, if it does not already exist
