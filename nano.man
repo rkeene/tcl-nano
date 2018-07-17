@@ -31,7 +31,6 @@ portion of the command name may be one of
 or
 .BR json .
 ..
-.PU
 .TH NANO N "@@SHORT_DATE@@" "nano @@VERS@@"
 .SH NAME
 nano \- Tcl bindings for Nano
@@ -138,7 +137,7 @@ nano \- Tcl bindings for Nano
 .br
 .B signBlockHash
 .I blockHash
-.I privateKey 
+.I privateKey
 .RB ? -hex | -binary ?
 .br
 .B sign
@@ -325,17 +324,24 @@ produce a string that is 6 characters long using the base32 alphabet
 The format of these 300 bits are
 .EX
 
-  [Padding (4 bits: 0)].[Public Key (256 bits)].[Checksum (40 bits)]
+   struct {
+       uint4_t padding = 0000b;
+       uint256_t publicKey;
+       uint40_t  checksum;
+   }
 
 .EE
+The checksum is computed as a 5 byte (40 bit) Blake2b hash of the 256-bit
+public key (in binary format), followed by reversing the bytes.
+
 For example the public key
 .B DC1512154EB72112B8CC230D7B8C7DD467DA78E4763182D6CAFAADB14855A5E8
+which has a 5-byte Blake2b hash of
+.B {0x18, 0x74, 0xA3, 0x46, 0x9C}
 would be encoded as
 .B 0000.DC1512154EB72112B8CC230D7B8C7DD467DA78E4763182D6CAFAADB14855A5E8.9C46A37418
 which when encoded in base32 and the prefix added produces the address
 .BR nano_3q1o4acnxfs34cwerarfhg89uo59ubwgaxjjiddeoyofp767dbhamj5c8x1r .
-The checksum is computed as a 5 byte (40 bit) Blake2b hash of the 256-bit
-public key (in binary format), followed by reversing the bytes.
 
 .SS Network
 The Nano network consists of two different peer-to-peer networks.  One for
@@ -398,7 +404,7 @@ field indicates what version of the Nano protocol this node is using.
 The messageType field indicates what type of message is being relayed, and
 must conform to the following enumeration
 .TS
-box tab(:);
+allbox tab(:);
 cb cb cb cb
 c l l l.
 messageType:Name:On Bootstrap:On Realtime
@@ -476,7 +482,7 @@ Converts a Nano address to a public key.  The
 .B -hex
 option indicates that the public key should be returned in hexadecimal form.
 The
-.-B -binary
+.B -binary
 option indicates that the public key should be returned in binary form.
 The
 .B -verify
@@ -492,7 +498,7 @@ option inhibits verifying the checksum embedded in the Nano address.
 .BI " -> " address
 
 Converts a public key to a Nano address. The
-.-B -xrb
+.B -xrb
 option specifies that the returned address should be prefixed with the
 old-style "xrb_" prefix, where the
 .B -nano
@@ -962,7 +968,7 @@ parameter (in units of raw).
 
 This procedure is used as part of the High-level Account interface.  It is
 used to retrieve information stored by
-.B addPending 
+.B addPending
 for a given
 .IR account .
 If the
@@ -1058,6 +1064,5 @@ for {set index 0} {$index < 10} {incr index} {
 .EE
 
 .SH AUTHOR
-.Sp
 Roy Keene
 .RI < rkeene@nano.org >
