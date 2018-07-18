@@ -435,10 +435,12 @@ TODOC
 
 .TP
 .B Keepalive
+The Keepalive message serves as an introduction and beaconing mechanism for
+the Nano real-time network.
 The Keepalive message requires exactly 8 IPv6 address and port number
 tuples to be sent as its payload.  The IPv6 addresses are each 128-bits
-(16-bytes) long and the port numbers are 16-bit integers sent in network byte
-order.  The payload for the Keepalive message type is 144 bytes in size.
+(16-bytes) long and the port numbers are 16-bit integers sent in little endian
+byte order.  The payload for the Keepalive message type is 144 bytes in size.
 
 .TP
 .B Publish
@@ -454,7 +456,15 @@ TODOC
 
 .TP
 .B Bulk_Pull
-TODOC
+The Bulk_Pull message is used to pull the entire chain for an account, down to
+its beginning or to a given block.  It takes 2 arguments, both of them 256-bit.
+The first argument is the account, so its 256-bit public key should be encoded
+as binary in big-endian notation.  The second argument is the block hash to
+stop sending at, or 256 bits of 0s to indicate that the entire chain should be
+sent.  The payload for Bulk_Pull messages is 64 bytes in size.
+
+The response from a Bulk_Pull request will be a stream of tuples, each
+containing a 256-bit block hash, and a block message.  TODOC: Format
 
 .TP
 .B Bulk_Push
@@ -462,7 +472,23 @@ TODOC
 
 .TP
 .B Frontier_Req
-TODOC
+The Frontier_Req message is used to pull a list of accounts from a remote node
+for the purpose of bootstrapping.  It requires 3 arguments:  The 256-bit
+public key of an account to start with, a 32-bit integer denoting the age of
+accounts to return, and a 32-bit integer denoting the number of records to
+return.  If the
+.I age
+parameter is
+.B 0xffffffff
+then all records are returned, regardless of age.  If the
+.I count
+parameter is
+.B 0xffffffff
+then all records are returned and no limit is imposed.
+
+The response from a Frontier_Req is a 256-bit public key, and the 256-bit
+block hash that corresponds to the frontier (most recent block) for that
+account's blockchain from the node where the response was generated.
 
 .TP
 .B Bulk_Pull_Blocks

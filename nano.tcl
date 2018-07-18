@@ -1,5 +1,7 @@
 #! /usr/bin/env tclsh
 
+package require Tcl 8.6.4
+
 package require json
 package require json::write
 
@@ -18,10 +20,58 @@ namespace eval ::nano::ledger::lmdb {}
 namespace eval ::nano::rpc {}
 namespace eval ::nano::rpc::client {}
 namespace eval ::nano::balance {}
+namespace eval ::nano::node::server {}
+namespace eval ::nano::node::bootstrap {}
+namespace eval ::nano::node::p2p {}
+namespace eval ::nano::network::client {}
+namespace eval ::nano::network::server {}
+namespace eval ::nano::network::_dns {}
 
 # Constants
 set ::nano::block::stateBlockPreamble [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
+set ::nano::block::zero "0000000000000000000000000000000000000000000000000000000000000000"
+set ::nano::address::zero $::nano::block::zero
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
+set ::nano::network::messageTypes {
+	"invalid"
+	"not_a_type"
+	"keepalive"
+	"publish"
+	"confirm_req"
+	"confirm_ack"
+	"bulk_pull"
+	"bulk_push"
+	"frontier_req"
+	"bulk_pull_blocks"
+}
+set ::nano::balance::_conversion {
+	GNano 1000000000000000000000000000000000000000
+	MNano 1000000000000000000000000000000000000
+	Gnano 1000000000000000000000000000000000
+	Gxrb  1000000000000000000000000000000000
+	KNano 1000000000000000000000000000000000
+	Nano  1000000000000000000000000000000
+	_USER 1000000000000000000000000000000
+	NANO  1000000000000000000000000000000
+	Mnano 1000000000000000000000000000000
+	Mxrb  1000000000000000000000000000000
+	Mrai  1000000000000000000000000000000
+	knano 1000000000000000000000000000
+	kxrb  1000000000000000000000000000
+	mNano 1000000000000000000000000000
+	nano  1000000000000000000000000
+	xrb   1000000000000000000000000
+	uNano 1000000000000000000000000
+	mnano 1000000000000000000000
+	mxrb  1000000000000000000000
+	unano 1000000000000000000
+	uxrb  1000000000000000000
+	Traw  1000000000000
+	Graw  1000000000
+	Mraw  1000000
+	Kraw  1000
+	raw   1
+}
 
 # Address management functions
 proc ::nano::address::toPublicKey {address args} {
@@ -316,7 +366,7 @@ proc ::nano::block::dict::fromJSON {blockJSON} {
 		set workDataBasedOn "previous"
 	}
 
-	if {[dict get $retval "type"] eq "state" && [dict get $retval "previous"] eq "0000000000000000000000000000000000000000000000000000000000000000" && [dict get $retval "link"] eq "0000000000000000000000000000000000000000000000000000000000000000"} {
+	if {[dict get $retval "type"] eq "state" && [dict get $retval "previous"] eq $::nano::block::zero && [dict get $retval "link"] eq $::nano::block::zero} {
 		set workDataBasedOn "account"
 	}
 
@@ -877,7 +927,7 @@ proc ::nano::block::create::receive {args} {
 	}
 
 	if {![info exists block(previous)]} {
-		set block(previous) "0000000000000000000000000000000000000000000000000000000000000000"
+		set block(previous) $::nano::block::zero
 		set block(previousBalance) 0
 		set block(_workData) [::nano::address::toPublicKey $block(to) -hex]
 	} else {
@@ -914,7 +964,7 @@ proc ::nano::block::create::receive {args} {
 proc ::nano::block::create::setRepresentative {args} {
 	array set block $args
 
-	set block(link) "0000000000000000000000000000000000000000000000000000000000000000"
+	set block(link) $::nano::block::zero
 
 	set blockDict [dict create \
 		"type" state \
@@ -1587,8 +1637,516 @@ proc ::nano::node::configure {network args} {
 		dict set database_config "configDirectory" $info(-configDirectory)
 	}
 
-	set dbHandle [::nano::ledger::${database_backend}::init $database_config]
-	::nano::node::setLedgerHandle $dbHandle
+#	set dbHandle [::nano::ledger::${database_backend}::init $database_config]
+#	::nano::node::setLedgerHandle $dbHandle
+}
+
+proc ::nano::node::log {message {level "debug"}} {
+	set linePrefix ""
+	foreach line [split $message "\n"] {
+		puts stderr [format {%-40s %10s [%5s] %s} [::info coroutine] [clock seconds] $level ${linePrefix}$line]
+		set linePrefix "    "
+	}
+}
+
+proc ::nano::network::client::bulk_pull {account {end ""}} {
+	set accountPubKey [::nano::address::toPublicKey $account -binary]
+
+	if {$end ne ""} {
+		if {[string length $end] != $::nano::block::hashLength} {
+			set end [binary decode hex $end]
+		}
+	} else {
+		set end [binary decode hex $::nano::block::zero]
+	}
+
+	return [binary format a32a32 \
+		$accountPubKey \
+		$end \
+	]
+}
+
+proc ::nano::network::client::frontier_req {{startAccount ""} {age ""} {count ""}} {
+	if {$startAccount eq ""} {
+		set accountPubKey [binary decode hex $::nano::address::zero]
+	} else {
+		set accountPubKey [::nano::address::toPublicKey $startAccount -binary]
+	}
+
+	if {$age eq ""} {
+		set age [expr {2**32-1}]
+	}
+
+	if {$count eq ""} {
+		set count [expr {2**32-1}]
+	}
+
+	return [binary format a32ii $accountPubKey $age $count]
+}
+
+proc ::nano::network::client::keepalive {} {
+	# Encode our local IP address in the packet
+	set localIPs [list]
+	foreach ipVersion {v4 v6} {
+		## XXX:TODO: Work out a better system for determining ones own IP
+		switch -exact -- $ipVersion {
+			v4 {
+				if {![info exists ::nano::network::client::localIP(v4)]} {
+					set ::nano::network::client::localIP(v4) [exec curl -sS http://ipv4.rkeene.org/whatismyip]
+				}
+				set localIP "::ffff:${::nano::network::client::localIP(v4)}"
+			}
+			v6 {
+				if {![info exists ::nano::network::client::localIP(v6)]} {
+					set ::nano::network::client::localIP(v6) [exec curl -sS http://ipv6.rkeene.org/whatismyip]
+				}
+				set localIP $::nano::network::client::localIP(v6)
+			}
+		}
+		lappend localIPs [binary decode hex [string map [list ":" ""] [::ip::normalize $localIP]]]
+	}
+
+	# Encode port as a 16-bit integer in network byte order (big endian)
+	set localPort [dict get $::nano::node::configuration "node" "peering_port"]
+	set localPort [binary format s $localPort]
+
+	set retval ""
+	while {[string length $retval] < 144} {
+		foreach localIP $localIPs {
+			append retval "${localIP}${localPort}"
+		}
+	}
+
+	return [string range $retval 0 143]
+}
+
+proc ::nano::network::client {sock messageType args} {
+	set versionUsing 12
+	set versionMin 1
+	set versionMax 12
+	set extensions 0
+
+	set messageType [string tolower $messageType]
+	set messageTypeID [lsearch -exact $::nano::network::messageTypes $messageType]
+	if {$messageTypeID == -1} {
+		return -code error "Invalid message type: $messageType"
+	}
+
+	set blockType 0
+	set extensions [expr {$extensions | (($blockType << 8) & 0x0f00)}]
+
+	set message [binary format a2ccccS \
+		RC \
+		$versionMax \
+		$versionUsing \
+		$versionMin \
+		$messageTypeID \
+		$extensions \
+	]
+
+	append message [::nano::network::client::${messageType} {*}$args]
+
+	::nano::node::log "Sending message [binary encode hex $message] to socket $sock"
+
+	catch {
+		if {[dict get $sock "type"] eq "p2p"} {
+			set sockInfo $sock
+			set sock [dict get $sock "socket"]
+		}
+	}
+
+	if {[info exists sockInfo]} {
+		fconfigure $sock -remote [dict get $sockInfo "remote"]
+	}
+
+	chan configure $sock -translation binary -encoding binary
+
+	puts -nonewline $sock $message
+	flush $sock
+
+	return ""
+}
+
+proc ::nano::node::bootstrap::peer {peer peerPort} {
+	::nano::node::log "Connecting to ${peer}:${peerPort}"
+
+	catch {
+		set sock [::nano::network::_connect $peer $peerPort]
+	} err
+	if {![info exists sock]} {
+		::nano::node::log "Failed to connect to ${peer} ${peerPort}: $::errorInfo"
+
+		return
+	}
+	defer::defer close $sock
+
+	::nano::node::log "Connected to $peer:$peerPort ;; sock = $sock"
+
+	::nano::network::client $sock "frontier_req"
+	while true {
+		set account [::nano::address::fromPublicKey [::nano::network::_recv $sock 32]]
+		set frontier [::nano::network::_recv $sock 32]
+
+		puts "$account - [binary encode hex $frontier]"
+	}
+
+	# XXX:TODO: Pull in some stuff
+	# XXX:TODO: When that stuff is pulled, add it to the ledger
+
+	return
+
+	::nano::network::client $sock "bulk_pull" "xrb_3h57qc7u84uz96ox3suo6wz5hz17oi7e6bpgeg3sdkayn31ujxedkjp6i1kp"
+	if {[catch {
+		set result [::nano::network::_recv $sock 8]
+		puts "result=[binary encode hex $result]"
+exit 0
+	} err]} {
+		::nano::node::log "Error: $err"
+	}
+
+}
+
+proc ::nano::network::_dns::toIPList {name} {
+	if {[::ip::version $name] > 0} {
+		return [list $name]
+	}
+
+	set retval [list]
+	foreach addressType {A AAAA} {
+		set dnsQueryID [::dns::resolve $name -type $addressType]
+		for {set dnsCheck 0} {$dnsCheck < 100} {incr dnsCheck} {
+			switch -- [::dns::status $dnsQueryID] {
+				"ok" {
+					lappend retval {*}[::dns::address $dnsQueryID]
+
+					break
+				}
+				"error" - "timeout" - "eof" {
+					break
+				}
+				default {
+				}
+			}
+			::nano::node::_sleep 10
+		}
+		::dns::cleanup $dnsQueryID
+	}
+
+	return $retval
+}
+
+# XXX:TODO: Which namespace should this go in ?
+proc ::nano::node::_randomSortList {args} {
+	set list [lindex $args end]
+	set args [lrange $args 0 end-1]
+	set salt [expr {rand()}]
+	tailcall lsort {*}$args -command [list apply {{salt a b} {
+		if {$a eq $b} {
+			return 0
+		}
+		set a [binary encode hex [::nano::internal::hashData "${salt}|${a}"]]
+		set b [binary encode hex [::nano::internal::hashData "${salt}|${b}"]]
+		set a "0x${a}"
+		set b "0x${b}"
+		if {$a < $b} {
+			return -1
+		} else {
+			return 1
+		}
+	}} $salt] $list
+}
+
+proc ::nano::node::bootstrap {} {
+	while true {
+		set peerInfoList [::nano::network::getPeers]
+		::nano::node::log "Have [llength $peerInfoList] peers"
+
+		foreach peerInfo $peerInfoList {
+			set peer     [dict get $peerInfo "address"]
+			set peerPort [dict get $peerInfo "port"]
+
+dict set ::nano::node::configuration node bootstrap_connections 1
+			if {[llength [info command ::nano::node::bootstrap::peer_*]] >= [dict get $::nano::node::configuration node bootstrap_connections]} {
+				continue
+			}
+
+			set peerId [binary encode hex [::nano::internal::hashData "$peer:$peerPort" 5]]
+
+			if {[info command ::nano::node::bootstrap::peer_${peerId}] ne ""} {
+				continue
+			}
+
+			coroutine ::nano::node::bootstrap::peer_${peerId} ::nano::node::bootstrap::peer $peer $peerPort
+		}
+
+		::nano::node::_sleep 30000
+	}
+}
+
+proc ::nano::network::_connect {host port} {
+	if {[info coroutine] eq ""} {
+		set sock [socket $host $port]
+	} else {
+		set sock [socket -async $host $port]
+		chan event $sock writable [info coroutine]
+		chan event $sock readable [info coroutine]
+
+		if {![chan configure $sock -connecting]} {
+			if {[chan configure $sock -error] ne ""} {
+				close $sock
+
+				return -code error "Socket error connecting to $host $port"
+			}
+
+			chan event $sock writable ""
+			chan event $sock readable ""
+
+			return $sock
+		}
+
+		::nano::node::log "Waiting in the event loop for socket $sock to become readable"
+		yield
+
+		chan event $sock writable ""
+		chan event $sock readable ""
+
+		if {[eof $sock] || (![chan configure $sock -connecting] && [chan configure $sock -error] ne "") || [chan configure $sock -connecting]} {
+			close $sock
+
+			return -code error "EOF from socket"
+		}
+	}
+
+	chan configure $sock -blocking false -translation binary -encoding binary
+
+	return $sock
+}
+
+proc ::nano::network::_recv {sock bytes} {
+	if {[info coroutine] ne ""} {
+		chan event $sock readable [info coroutine]
+	}
+
+	set retBuffer ""
+
+	while {$bytes > 0} {
+		if {[info coroutine] ne ""} {
+			yield
+		}
+
+		set buffer [read $sock $bytes]
+		set bufferLen [string length $buffer]
+		if {$bufferLen == 0} {
+			set chanError [chan configure $sock -error]
+			if {$chanError ne ""} {
+				return -code error "Short read on socket $sock ($bytes bytes remaining): $chanError"
+			}
+
+			continue
+		}
+
+		incr bytes -$bufferLen
+		append retBuffer $buffer
+	}
+
+	chan event $sock readable ""
+
+	return $retBuffer
+}
+
+proc ::nano::node::_sleep {ms} {
+	::nano::node::log "Sleeping for $ms ms"
+
+	after $ms [info coroutine]
+	yield
+}
+
+proc ::nano::network::getPeers {} {
+	if {[info exists ::nano::node::configuration]} {
+		set peers [dict get $::nano::node::configuration node preconfigured_peers]
+		set defaultPeerPort [dict get $::nano::node::configuration node peering_port]
+	} else {
+		error "Running without the node is currently unsupported"
+	}
+
+	set completePeers [list]
+	foreach peer $peers {
+		catch {
+			foreach peer [::nano::network::_dns::toIPList $peer] {
+				lappend completePeers [dict create address $peer port $defaultPeerPort]
+			}
+		}
+	}
+
+	set now [clock seconds]
+	foreach {peerKeyInfo peerInfo} [array get ::nano::node::peers] {
+		set lastSeen [dict get $peerInfo "lastSeen"]
+		if {($now - $lastSeen) > (2 * 60 * 60)} {
+			continue
+		}
+
+		set address [dict get $peerKeyInfo "address"]
+		set peerPort [dict get $peerKeyInfo "port"]
+
+		lappend completePeers [dict create address $peer port $peerPort]
+	}
+
+	set completePeers [::nano::node::_randomSortList -unique $completePeers]
+	set retval [list]
+	foreach peer $completePeers {
+		lappend retval $peer
+	}
+
+	return $retval
+}
+
+proc ::nano::network::server::keepalive {blockData} {
+	set peers [list]
+	while {$blockData ne ""} {
+		# Parse an address and port pair
+		set foundElements [binary scan $blockData H32s address port]
+		if {$foundElements != 2} {
+			break
+		}
+
+		# Remove the parsed portion
+		set blockData [string range $blockData 18 end]
+
+		# Convert the hex-notation to an IPv6 address
+		set address [string trim [regsub -all {....} $address {&:}] ":"]
+		set address [::ip::contract $address]
+		if {[string match "::ffff:*" $address] && [llength [split $address :]] == 5} {
+			# Convert IPv4 addresses to dotted quad notation
+			set address [::ip::normalize $address]
+			set address [split $address :]
+			set address [join [lrange $address end-1 end] ""]
+			set address [::ip::intToString 0x$address]
+		}
+		set port [expr {$port & 0xffff}]
+
+		lappend peers [dict create "address" $address "port" $port]
+	}
+
+	if {$blockData ne ""} {
+		return -code error "Invalid keepalive packet [binary encode hex $blockData]: Had extra bytes"
+	}
+
+	if {[llength $peers] != 8} {
+		return -code error "Invalid keepalive packet [binary encode hex $blockData]: Did not contain exactly 8 address+port tuples"
+	}
+
+	return [dict create "peers" $peers]
+}
+
+proc ::nano::node::server::keepalive {blockData} {
+	set now [clock seconds]
+
+	set peers [dict get [::nano::network::server::keepalive $blockData] "peers"]
+
+	foreach peer $peers {
+		set address [dict get $peer "address"]
+		set port [dict get $peer "port"]
+
+		set ::nano::node::peers([dict create address $address port $port]) [dict create lastSeen $now]
+	}
+}
+
+proc ::nano::network::server::publish {blockData} {
+	#puts "block: [binary encode hex $blockData]"
+#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036f4e1ff833324efc81c237776242928ef76a2cdfaa53f4c4530ee39bfff1977e26e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fc492fd20e57d048e000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465169006f988549a8b1e20e0a09b4b4dcae5397f6fcc4d507675f58c2b29ae02341b0a4fe562201a61bf27481aa4567c287136b4fd26b4840c93c42c7d1f5c518503d68ec561af4b8cf8
+#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036fa5e3647d3d296ec72baea013ba7fa1bf5c3357c33c90196f078ba091295e6e03e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fb2604ebd1fe098b8000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465165287cd9c61752dc9d011f666534dbdc10461e927503f9599791d73b1cca7fdc032d76db3f91e5b5c3d6206fa48b01bd08da4a89f2e880242e9917cfc3db80d0b9bfe8e6d1dd183d5
+}
+
+proc ::nano::network::server {message {networkType "bootstrap"}} {
+	set message [binary scan $message a2ccccsa* \
+		packetMagic \
+		versionMax \
+		versionUsing \
+		versionMin \
+		messageTypeID \
+		extensions \
+		args
+	]
+
+	if {$packetMagic ne "RC"} {
+		return ""
+	}
+
+	# XXX:TODO: Check versions and extensions
+
+	set messageType [lindex $::nano::network::messageTypes $messageTypeID]
+
+	set retval ""
+	if {[catch {
+		set retval [::nano::node::server::${messageType} $args]
+	} err]} {
+		if {![string match "invalid command name *" $err]} {
+			::nano::node::log "Error handling ${messageType}: $err"
+		}
+	}
+
+	return $retval
+}
+
+proc ::nano::node::p2p::incoming {socket} {
+	set data [read $socket 8192]
+	if {$data eq ""} {
+		return
+	}
+
+	set remote [chan configure $socket -peer]
+	set response [::nano::network::server $data "p2p"]
+	if {$response eq ""} {
+		return
+	}
+
+	# XXX:TODO: Send response
+	set peerSock [list type "p2p" remote $remote socket $socket]
+	#::nano::network::client $peerSock ...
+
+	return
+}
+
+proc ::nano::node::p2p {} {
+	package require udp
+
+	set peeringPort [dict get $::nano::node::configuration node peering_port]
+
+	# Start a UDP listening socket
+	set socket(v6) [udp_open $peeringPort ipv6 reuse]
+	set socket(v4) [udp_open $peeringPort reuse]
+	foreach {protocolVersion protocolSocket} [array get socket] {
+		fconfigure $protocolSocket -blocking false -encoding binary -translation binary
+		chan event $protocolSocket readable [list ::nano::node::p2p::incoming $protocolSocket]
+	}
+
+	# Periodically send keepalives to all known peers
+	## XXX:TODO: Limit this to only a few peers
+	while true {
+		foreach peerInfo [::nano::network::getPeers] {
+			set peerAddress [dict get $peerInfo "address"]
+			set peerPort [dict get $peerInfo "port"]
+			set protocolVersion "v[::ip::version $peerAddress]"
+
+			set peerSock [list type "p2p" remote [list $peerAddress $peerPort] socket $socket(${protocolVersion})]
+
+			::nano::network::client $peerSock "keepalive"
+		}
+
+		::nano::node::_sleep [expr {5 * 60 * 1000}]
+	}
+}
+
+proc ::nano::node::start {} {
+	package require defer
+	package require ip
+	package require udp
+	package require dns
+
+	coroutine ::nano::node::bootstrap::run ::nano::node::bootstrap
+	coroutine ::nano::node::p2p::run ::nano::node::p2p
+
+	vwait ::nano::node::_FOREVER_
 }
 
 # RPC Client
@@ -1655,35 +2213,6 @@ proc ::nano::rpc::client {action args} {
 }
 
 # Account balance manipulation
-set ::nano::balance::_conversion {
-	GNano 1000000000000000000000000000000000000000
-	MNano 1000000000000000000000000000000000000
-	Gnano 1000000000000000000000000000000000
-	Gxrb  1000000000000000000000000000000000
-	KNano 1000000000000000000000000000000000
-	Nano  1000000000000000000000000000000
-	_USER 1000000000000000000000000000000
-	NANO  1000000000000000000000000000000
-	Mnano 1000000000000000000000000000000
-	Mxrb  1000000000000000000000000000000
-	Mrai  1000000000000000000000000000000
-	knano 1000000000000000000000000000
-	kxrb  1000000000000000000000000000
-	mNano 1000000000000000000000000000
-	nano  1000000000000000000000000
-	xrb   1000000000000000000000000
-	uNano 1000000000000000000000000
-	mnano 1000000000000000000000
-	mxrb  1000000000000000000000
-	unano 1000000000000000000
-	uxrb  1000000000000000000
-	Traw  1000000000000
-	Graw  1000000000
-	Mraw  1000000
-	Kraw  1000
-	raw   1
-}
-
 proc ::nano::balance::toUnit {raw toUnit {decimals 0}} {
 	set divisor [dict get $::nano::balance::_conversion $toUnit]
 
@@ -1755,29 +2284,4 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	set result [list $balance $baseUnit]
 
 	return $result
-}
-
-proc ::nano::network::_read {fd bytes} {
-	if {[chan configure $fd -blocking]} {
-		tailcall ::read $fd $bytes
-	}
-
-	set data ""
-	while {$bytes > 0} {
-		set readData [read $fd $bytes]
-		if {[string length $readData] == 0} {
-			if {[eof $fd]} {
-				break
-			} else {
-				update
-
-				continue
-			}
-		}
-
-		incr bytes -[string length $readData]
-		append data $readData
-	}
-
-	return $data
 }
