@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <tcl.h>
+#ifdef NANO_TCL_HAVE_OPENMP
+#  include <omp.h>
+#endif
 
 #include "randombytes.h"
 #include "tweetnacl.h"
@@ -416,6 +419,7 @@ static void nano_generate_work(const unsigned char *blockhash, unsigned char *wo
 
 	memcpy(work, blockhash, sizeof(work));
 
+	#pragma omp target
 	while (1) {
 		work_valid = nano_validate_work(blockhash, work, workMin);
 		if (work_valid) {
