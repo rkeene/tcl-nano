@@ -22,7 +22,6 @@ set threadInit {
 set ::initDB true
 uplevel #0 $threadInit
 
-set ::numberOfCPUs 2
 set iterationCount 1
 
 db eval {
@@ -31,8 +30,39 @@ db eval {
 }
 
 ## -- PROCESSES
+proc numberOfThreads {} {
+	# Windows puts it in an environment variable
+	if {[info exists ::env(NUMBER_OF_PROCESSORS)]} {
+		return $::env(NUMBER_OF_PROCESSORS)
+	    }
+
+	# Check for sysctl (OSX, BSD)
+	set sysctl [auto_execok "sysctl"]
+	if {[llength $sysctl]} {
+		if {![catch {exec {*}$sysctl -n "hw.ncpu"} cores]} {
+			if {[string is integer -strict $cores]} {
+				return $cores
+			}
+		}
+	}
+
+	# Assume Linux, which has /proc/cpuinfo, but be careful
+	if {![catch {open "/proc/cpuinfo"} f]} {
+		set cores [regexp -all -line {^processor\s} [read $f]]
+		close $f
+		if {$cores > 0} {
+			return $cores
+		}
+	}
+
+	# No idea what the actual number of cores is; exhausted all our options
+	# Fall back to returning 1; there must be at least that because we're running on it!
+	return 1
+}
+
 set ::jobIDs [list]
-set ::threadPool [::tpool::create -minworkers $::numberOfCPUs -maxworkers $::numberOfCPUs -initcmd $::threadInit]
+set ::numberOfThreads [numberOfThreads]
+set ::threadPool [::tpool::create -minworkers $numberOfThreads -maxworkers $numberOfThreads -initcmd $::threadInit]
 set ::processBlock_orderID -1
 proc processBlock {args} {
 	updateStatus
