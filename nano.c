@@ -419,7 +419,7 @@ static void nano_generate_work(const unsigned char *blockhash, unsigned char *wo
 
 	memcpy(work, blockhash, sizeof(work));
 
-	#pragma omp target
+#pragma omp target map(tofrom:work)
 	while (1) {
 		work_valid = nano_validate_work(blockhash, work, workMin);
 		if (work_valid) {
