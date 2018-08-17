@@ -1,0 +1,100 @@
+#! /usr/bin/env tclsh
+
+## -- INIT
+set threadInit {
+	package require Thread
+	package require sqlite3
+	package require nano
+
+	set ::sqlFilename [file join [pwd] blocks.db]
+	if {[info exists ::initDB]} {
+		file delete -force $::sqlFilename
+	}
+
+	sqlite3 db $::sqlFilename
+
+	proc processBlockWorker {orderID block} {
+		set block [::nano::block::json::work $block -update]
+		db eval {INSERT INTO blocks (orderID, blockJSON) VALUES ($orderID, $block);}
+	}
+}
+
+set ::initDB true
+uplevel #0 $threadInit
+
+set ::numberOfCPUs 2
+set iterationCount 1
+
+db eval {
+	PRAGMA journal_mode = MEMORY;
+	CREATE TABLE blocks (orderID INTEGER PRIMARY KEY, blockJSON TEXT NOT NULL);
+}
+
+## -- PROCESSES
+set ::jobIDs [list]
+set ::threadPool [::tpool::create -minworkers $::numberOfCPUs -maxworkers $::numberOfCPUs -initcmd $::threadInit]
+set ::processBlock_orderID -1
+proc processBlock {args} {
+	updateStatus
+
+	incr ::processBlock_orderID
+	
+	set jobID [::tpool::post $::threadPool [list processBlockWorker ${::processBlock_orderID} {*}$args]]
+
+	lappend ::jobIDs $jobID
+
+	updateStatus
+}
+
+proc updateStatus {} {
+	puts -nonewline " -> [llength $::jobIDs] jobs pending         \r"
+	flush stdout
+}
+
+## -- MAIN
+if {[llength $argv] == 0} {
+	set seed [::nano::key::newSeed -hex]
+	set acct1FrontierHash $::nano::block::zero
+	puts stderr "WARNING: Unusable data will be created, use a seed and frontier hash for account-0 to create real data"
+} else {
+	if {[llength $argv] != 2} {
+		error "Usage: stress <seed> <account-0-frontier-hash>"
+	}
+
+	set seed [lindex $argv 0]
+	set acct1FrontierHash [lindex $argv 1]
+}
+
+set key1 [::nano::key::fromSeed $seed 0]
+set key2 [::nano::key::fromSeed $seed 1]
+set acct1 [::nano::address::fromPrivateKey $key1]
+set acct2 [::nano::address::fromPrivateKey $key2]
+
+::nano::account::setFrontier $acct1 $acct1FrontierHash 1 $acct1
+
+for {set blockCount 0} {$blockCount < $iterationCount} {incr blockCount} {
+	set block [::nano::account::send $acct1 $acct2 1 $key1]
+	processBlock $block
+	set hashSend [dict get [::nano::block::dict::fromJSON $block] _blockHash]
+
+	set block [::nano::account::receive $acct2 $hashSend $key2]
+	processBlock $block
+
+	set block [::nano::account::send $acct2 $acct1 1 $key2]
+	processBlock $block
+	set hashSend [dict get [::nano::block::dict::fromJSON $block] _blockHash]
+
+	set block [::nano::account::receive $acct1 $hashSend $key1]
+	processBlock $block
+}
+
+# Wait for jobs to complete
+while {[llength $::jobIDs] > 0} {
+	updateStatus
+
+	::tpool::wait $::threadPool $::jobIDs ::jobIDs
+}
+
+updateStatus
+
+puts "\nDone !"
