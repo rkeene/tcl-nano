@@ -529,6 +529,47 @@ static int nano_tcl_generate_work(ClientData clientData, Tcl_Interp *interp, int
 	clientData = clientData;
 }
 
+static int nano_tcl_random_bytes(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	unsigned char *buffer;
+	int number_of_bytes;
+	int tgifo_ret;
+
+	if (objc != 2) {
+		Tcl_WrongNumArgs(interp, 1, objv, "numberOfBytes");
+
+		return(TCL_ERROR);
+	}
+
+	tgifo_ret = Tcl_GetIntFromObj(interp, objv[1], &number_of_bytes);
+	if (tgifo_ret != TCL_OK) {
+		return(tgifo_ret);
+	}
+
+	if (number_of_bytes > 128) {
+		Tcl_SetResult(interp, "May only request 128 bytes of random data at once", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	buffer = TclNano_AttemptAlloc(number_of_bytes);
+	if (!buffer) {
+		Tcl_SetResult(interp, "memory allocation failure", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	randombytes(buffer, number_of_bytes);
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(buffer, number_of_bytes));
+
+	TclNano_Free(buffer);
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
 static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	if (objc != 1) {
 		Tcl_WrongNumArgs(interp, 1, objv, "");
@@ -585,6 +626,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	TclNano_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data);
 	TclNano_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work);
+	TclNano_CreateObjCommand(interp, "::nano::internal::randomBytes", nano_tcl_random_bytes);
 
 	TclNano_Eval(interp, nanoInitScript);
 
