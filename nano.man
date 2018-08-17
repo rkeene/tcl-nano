@@ -418,6 +418,8 @@ messageType:Name:On Bootstrap:On Realtime:Version
 0x07:Bulk_Push:Yes:No:?
 0x08:Frontier_Req:Yes:No:?
 0x09:Bulk_Pull_Blocks:Yes:No:11+
+0x0A:Node_ID_Handshake:Yes:No:12+
+0x0B:Bulk_Pull_Account:Yes:No:12+
 .TE
 
 .B "TODO: Extensions"
@@ -494,6 +496,13 @@ account's blockchain from the node where the response was generated.
 .B Bulk_Pull_Blocks
 TODOC
 
+.TP
+.B Node_ID_Handshake
+TODOC
+
+.TP
+.B Bulk_Pull_Account
+TODOC
 
 .SH PROCEDURES
 .SS Addresses
