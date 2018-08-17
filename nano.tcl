@@ -22,7 +22,7 @@ namespace eval ::nano::rpc::client {}
 namespace eval ::nano::balance {}
 namespace eval ::nano::node::server {}
 namespace eval ::nano::node::bootstrap {}
-namespace eval ::nano::node::p2p {}
+namespace eval ::nano::node::realtime {}
 namespace eval ::nano::network::client {}
 namespace eval ::nano::network::server {}
 namespace eval ::nano::network::_dns {}
@@ -43,6 +43,8 @@ set ::nano::network::messageTypes {
 	"bulk_push"
 	"frontier_req"
 	"bulk_pull_blocks"
+	"node_id_handshake"
+	"bulk_pull_account"
 }
 set ::nano::balance::_conversion {
 	GNano 1000000000000000000000000000000000000000
@@ -1095,6 +1097,10 @@ proc ::nano::account::receive {account blockHash signKey} {
 
 	set blockInfo [getPending $account $blockHash]
 
+	if {![info exists representative]} {
+		set representative $account
+	}
+
 	set amount [dict get $blockInfo amount]
 	set blockArgs [list to $account previousBalance $balance \
 	                    amount $amount sourceBlock $blockHash \
@@ -1538,7 +1544,9 @@ proc ::nano::node::_defaultConfig {basis network} {
 		set basis_node [dict create]
 		set basis_node [dict get $basis "node"]
 	}
-	set default_node [dict create]
+	set default_node [dict create \
+		"client_id"     [binary encode hex [::nano::internal::randomBytes 32]]
+	]
 
 	catch {
 		set basis_node_database [dict create]
@@ -1666,6 +1674,104 @@ proc ::nano::network::client::bulk_pull {account {end ""}} {
 	]
 }
 
+proc ::nano::network::client::bulk_pull_account {account {minPending 0} {flags ""}} {
+	set accountPubKey [::nano::address::toPublicKey $account -binary]
+	set minPendingHex [format %032llx $minPending]
+
+	if {[string length $minPendingHex] > 32} {
+		return -code error "Invalid amount: $minPending"
+	}
+
+	set flagsInt 0
+	foreach flagName $flags {
+		unset -nocomplain flagValue
+
+		switch -- $flagName {
+			"pendingAddressOnly" {
+				set flagValue 1
+			}
+			default {
+				if {[string is integer -strict $flagName]} {
+					set flagValue $flagName
+				} else {
+					return -code error "Invalid flag: $flagName"
+				}
+			}
+		}
+
+		set flagsInt [expr {$flagsInt | $flagValue}]
+	}
+
+	return [binary format a32H32c \
+		$accountPubKey \
+		$minPendingHex \
+		$flagsInt \
+	]
+}
+
+proc ::nano::network::client::bulk_pull_account_response {sock account {minPending 0} {flags ""}} {
+	set frontierBlockhash [::nano::network::_recv $sock 32]
+	set frontierBalance   [::nano::network::_recv $sock 16]
+
+	set frontierBlockhash [binary encode hex $frontierBlockhash]
+	set frontierBlockhash [string toupper $frontierBlockhash]
+
+	set frontierBalance   [binary encode hex $frontierBalance]
+	set frontierBalance 0x$frontierBalance
+	set frontierBalance [expr {$frontierBalance}]
+
+	set fullPendingInfo true
+	if {[lsearch -exact $flags "pendingAddressOnly"] != -1} {
+		# XXX:TODO: We support numeric flags in the generation
+		# side but not here, should we ?
+		set fullPendingInfo false
+	}
+
+	set pendingInfo [list]
+	while true {
+		if {$fullPendingInfo} {
+			set pendingBlockhash [binary encode hex [::nano::network::_recv $sock 32]]
+			set pendingAmount    [binary encode hex [::nano::network::_recv $sock 16]]
+
+			if {$pendingBlockhash eq $::nano::block::zero} {
+				break
+			}
+
+			set pendingBlockhash [string toupper $pendingBlockhash]
+			set pendingAmount 0x$pendingAmount
+			set pendingAmount [expr {$pendingAmount}]
+
+			lappend pendingInfo [dict create \
+				blockhash $pendingBlockhash \
+				amount    $pendingAmount \
+			]
+		} else {
+			set pendingFrom [binary encode hex [::nano::network::_recv $sock 32]]
+
+			if {$pendingFrom eq $::nano::address::zero} {
+				break
+			}
+
+			set pendingFrom [::nano::address::fromPublicKey $pendingFrom]
+
+			lappend pendingInfo [dict create \
+				from $pendingFrom \
+			]
+		}
+	}
+
+	set retval [dict create \
+		frontier \
+			[dict create \
+				blockhash $frontierBlockhash \
+				balance $frontierBalance \
+			] \
+		pending $pendingInfo \
+	]
+
+	return $retval
+}
+
 proc ::nano::network::client::frontier_req {{startAccount ""} {age ""} {count ""}} {
 	if {$startAccount eq ""} {
 		set accountPubKey [binary decode hex $::nano::address::zero]
@@ -1684,25 +1790,56 @@ proc ::nano::network::client::frontier_req {{startAccount ""} {age ""} {count ""
 	return [binary format a32ii $accountPubKey $age $count]
 }
 
+proc ::nano::network::client::node_id_handshake {nodeID} {
+	set nodeID [binary decode hex $nodeID]
+
+	return $nodeID
+}
+
+proc ::nano::network::_localIP {version} {
+	if {[info exists ::nano::network::_localIP($version)]} {
+		return $::nano::network::_localIP($version)
+	}
+
+	## XXX:TODO: Work out a better system for determining ones own IP
+	switch -exact -- $version {
+		v4 {
+			set url "http://ipv4.rkeene.org/whatismyip"
+			set localIPPrefix "::ffff:"
+		}
+		v6 {
+			set url "http://ipv6.rkeene.org/whatismyip"
+			set localIPPrefix ""
+		}
+	}
+
+	set localIP [exec curl -sS $url]
+	if {$localIP eq ""} {
+		return -code error "Unable to lookup local IP $version"
+	}
+
+	set localIP [string trim $localIP]
+	set localIP "${localIPPrefix}${localIP}"
+
+	set ::nano::network::_localIP($version) $localIP
+
+	return $::nano::network::_localIP($version)
+}
+
 proc ::nano::network::client::keepalive {} {
 	# Encode our local IP address in the packet
 	set localIPs [list]
 	foreach ipVersion {v4 v6} {
-		## XXX:TODO: Work out a better system for determining ones own IP
-		switch -exact -- $ipVersion {
-			v4 {
-				if {![info exists ::nano::network::client::localIP(v4)]} {
-					set ::nano::network::client::localIP(v4) [exec curl -sS http://ipv4.rkeene.org/whatismyip]
-				}
-				set localIP "::ffff:${::nano::network::client::localIP(v4)}"
-			}
-			v6 {
-				if {![info exists ::nano::network::client::localIP(v6)]} {
-					set ::nano::network::client::localIP(v6) [exec curl -sS http://ipv6.rkeene.org/whatismyip]
-				}
-				set localIP $::nano::network::client::localIP(v6)
-			}
+		unset -nocomplain localIP
+
+		catch {
+			set localIP [::nano::network::_localIP $ipVersion]
 		}
+
+		if {![info exists localIP]} {
+			continue
+		}
+
 		lappend localIPs [binary decode hex [string map [list ":" ""] [::ip::normalize $localIP]]]
 	}
 
@@ -1749,7 +1886,7 @@ proc ::nano::network::client {sock messageType args} {
 	::nano::node::log "Sending message [binary encode hex $message] to socket $sock"
 
 	catch {
-		if {[dict get $sock "type"] eq "p2p"} {
+		if {[dict get $sock "type"] eq "realtime"} {
 			set sockInfo $sock
 			set sock [dict get $sock "socket"]
 		}
@@ -1764,7 +1901,13 @@ proc ::nano::network::client {sock messageType args} {
 	puts -nonewline $sock $message
 	flush $sock
 
-	return ""
+	set responseCommand ::nano::network::client::${messageType}_response
+	set response ""
+	if {[info command $responseCommand] ne ""} {
+		set response [$responseCommand $sock {*}$args]
+	}
+
+	return $response
 }
 
 proc ::nano::node::bootstrap::peer {peer peerPort} {
@@ -1782,28 +1925,46 @@ proc ::nano::node::bootstrap::peer {peer peerPort} {
 
 	::nano::node::log "Connected to $peer:$peerPort ;; sock = $sock"
 
-	::nano::network::client $sock "frontier_req"
-	while true {
-		set account [::nano::address::fromPublicKey [::nano::network::_recv $sock 32]]
-		set frontier [::nano::network::_recv $sock 32]
+	if {$::nano::node::bootstrap::frontier_req_running} {
+		while true {
+			if {[llength $::nano::node::bootstrap::frontiers_to_pull] == 0} {
+				if {!$::nano::node::bootstrap::frontier_req_running} {
+					break
+				}
 
-		puts "$account - [binary encode hex $frontier]"
+				::nano::node::_sleep 100 0
+
+				continue
+			}
+
+			set accountInfo [lindex $::nano::node::bootstrap::frontiers_to_pull 0]
+			set ::nano::node::bootstrap::frontiers_to_pull [lrange $::nano::node::bootstrap::frontiers_to_pull 1 end]
+
+			set account [dict get $accountInfo "account"]
+
+			::nano::node::log "Pulling $accountInfo"
+			# XXX:TODO: Compare frontier, and supply our local one
+			::nano::network::client $sock "bulk_pull" $account
+			while true {
+				::nano::network::_recv $sock 32
+			}
+		}
+	} else {
+		set ::nano::node::bootstrap::frontier_req_running true
+		defer::defer set ::nano::node::bootstrap::frontier_req_running false
+
+		::nano::node::log "Requesting frontiers"
+		# XXX:TODO: Age?
+		::nano::network::client $sock "frontier_req"
+		while true {
+			set account [::nano::address::fromPublicKey [::nano::network::_recv $sock 32]]
+			set frontier [binary encode hex [::nano::network::_recv $sock 32]]
+
+			lappend ::nano::node::bootstrap::frontiers_to_pull [dict create account $account frontier $frontier]
+		}
 	}
-
-	# XXX:TODO: Pull in some stuff
-	# XXX:TODO: When that stuff is pulled, add it to the ledger
 
 	return
-
-	::nano::network::client $sock "bulk_pull" "xrb_3h57qc7u84uz96ox3suo6wz5hz17oi7e6bpgeg3sdkayn31ujxedkjp6i1kp"
-	if {[catch {
-		set result [::nano::network::_recv $sock 8]
-		puts "result=[binary encode hex $result]"
-exit 0
-	} err]} {
-		::nano::node::log "Error: $err"
-	}
-
 }
 
 proc ::nano::network::_dns::toIPList {name} {
@@ -1857,6 +2018,9 @@ proc ::nano::node::_randomSortList {args} {
 }
 
 proc ::nano::node::bootstrap {} {
+	set ::nano::node::bootstrap::frontiers_to_pull [list]
+	set ::nano::node::bootstrap::frontier_req_running false
+
 	while true {
 		set peerInfoList [::nano::network::getPeers]
 		::nano::node::log "Have [llength $peerInfoList] peers"
@@ -1865,7 +2029,6 @@ proc ::nano::node::bootstrap {} {
 			set peer     [dict get $peerInfo "address"]
 			set peerPort [dict get $peerInfo "port"]
 
-dict set ::nano::node::configuration node bootstrap_connections 1
 			if {[llength [info command ::nano::node::bootstrap::peer_*]] >= [dict get $::nano::node::configuration node bootstrap_connections]} {
 				continue
 			}
@@ -1904,7 +2067,7 @@ proc ::nano::network::_connect {host port} {
 			return $sock
 		}
 
-		::nano::node::log "Waiting in the event loop for socket $sock to become readable"
+		::nano::node::log "Waiting in the event loop for socket $sock to become writable"
 		yield
 
 		chan event $sock writable ""
@@ -1925,6 +2088,8 @@ proc ::nano::network::_connect {host port} {
 proc ::nano::network::_recv {sock bytes} {
 	if {[info coroutine] ne ""} {
 		chan event $sock readable [info coroutine]
+	} else {
+		chan configure $sock -blocking true
 	}
 
 	set retBuffer ""
@@ -1942,6 +2107,10 @@ proc ::nano::network::_recv {sock bytes} {
 				return -code error "Short read on socket $sock ($bytes bytes remaining): $chanError"
 			}
 
+			if {[chan eof $sock]} {
+				return -code error "Short read on socket $sock ($bytes bytes remaining): EOF"
+			}
+
 			continue
 		}
 
@@ -1954,8 +2123,10 @@ proc ::nano::network::_recv {sock bytes} {
 	return $retBuffer
 }
 
-proc ::nano::node::_sleep {ms} {
-	::nano::node::log "Sleeping for $ms ms"
+proc ::nano::node::_sleep {ms {verbose 1}} {
+	if {$verbose} {
+		::nano::node::log "Sleeping for $ms ms"
+	}
 
 	after $ms [info coroutine]
 	yield
@@ -2058,7 +2229,7 @@ proc ::nano::network::server::publish {blockData} {
 }
 
 proc ::nano::network::server {message {networkType "bootstrap"}} {
-	set message [binary scan $message a2ccccsa* \
+	set messageParsed [binary scan $message a2ccccsa* \
 		packetMagic \
 		versionMax \
 		versionUsing \
@@ -2075,6 +2246,7 @@ proc ::nano::network::server {message {networkType "bootstrap"}} {
 	# XXX:TODO: Check versions and extensions
 
 	set messageType [lindex $::nano::network::messageTypes $messageTypeID]
+puts "*** Incoming: $messageType ($messageTypeID on $networkType) [binary encode hex $message]"
 
 	set retval ""
 	if {[catch {
@@ -2088,36 +2260,37 @@ proc ::nano::network::server {message {networkType "bootstrap"}} {
 	return $retval
 }
 
-proc ::nano::node::p2p::incoming {socket} {
+proc ::nano::node::realtime::incoming {socket} {
 	set data [read $socket 8192]
 	if {$data eq ""} {
 		return
 	}
 
 	set remote [chan configure $socket -peer]
-	set response [::nano::network::server $data "p2p"]
+	set response [::nano::network::server $data "realtime"]
 	if {$response eq ""} {
 		return
 	}
 
 	# XXX:TODO: Send response
-	set peerSock [list type "p2p" remote $remote socket $socket]
+	set peerSock [list type "realtime" remote $remote socket $socket]
 	#::nano::network::client $peerSock ...
 
 	return
 }
 
-proc ::nano::node::p2p {} {
+proc ::nano::node::realtime {} {
 	package require udp
 
 	set peeringPort [dict get $::nano::node::configuration node peering_port]
+	set clientID [dict get $::nano::node::configuration node client_id]
 
 	# Start a UDP listening socket
 	set socket(v6) [udp_open $peeringPort ipv6 reuse]
 	set socket(v4) [udp_open $peeringPort reuse]
 	foreach {protocolVersion protocolSocket} [array get socket] {
 		fconfigure $protocolSocket -blocking false -encoding binary -translation binary
-		chan event $protocolSocket readable [list ::nano::node::p2p::incoming $protocolSocket]
+		chan event $protocolSocket readable [list ::nano::node::realtime::incoming $protocolSocket]
 	}
 
 	# Periodically send keepalives to all known peers
@@ -2128,12 +2301,13 @@ proc ::nano::node::p2p {} {
 			set peerPort [dict get $peerInfo "port"]
 			set protocolVersion "v[::ip::version $peerAddress]"
 
-			set peerSock [list type "p2p" remote [list $peerAddress $peerPort] socket $socket(${protocolVersion})]
+			set peerSock [list type "realtime" remote [list $peerAddress $peerPort] socket $socket(${protocolVersion})]
 
+			::nano::network::client $peerSock "node_id_handshake" $clientID
 			::nano::network::client $peerSock "keepalive"
 		}
 
-		::nano::node::_sleep [expr {5 * 60 * 1000}]
+		::nano::node::_sleep [expr {1 * 60 * 1000}]
 	}
 }
 
@@ -2144,7 +2318,7 @@ proc ::nano::node::start {} {
 	package require dns
 
 	coroutine ::nano::node::bootstrap::run ::nano::node::bootstrap
-	coroutine ::nano::node::p2p::run ::nano::node::p2p
+	coroutine ::nano::node::realtime::run ::nano::node::realtime
 
 	vwait ::nano::node::_FOREVER_
 }
