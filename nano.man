@@ -319,7 +319,7 @@ Nano addresses are composed of a prefix (either
 or
 .RB \(dq xrb_ \(dq)
 and 300 bits of base32 encoded data.  The 300-bits of base32 encoded data
-produce a string that is 6 characters long using the base32 alphabet
+produce a string that is 60 characters long using the base32 alphabet
 .BR 13456789abcdefghijkmnopqrstuwxyz .
 The format of these 300 bits are
 .EX
