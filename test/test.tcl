@@ -119,6 +119,9 @@ proc test_keygeneration {} {
 		return false
 	}
 
+	# Generate a new seed
+	set seed [::nano::key::newSeed]
+
 	return true
 }
 
