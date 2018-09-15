@@ -37,6 +37,17 @@ AC_ARG_ENABLE([debug], AS_HELP_STRING([--enable-debug], [enable debugging parame
 		tcl_nano_debug='true'
 	fi
 ])
+
+dnl Enable support for a code coverage build
+tcl_nano_coverage='false'
+AC_ARG_ENABLE([coverage], AS_HELP_STRING([--enable-coverage], [enable code coverage build (requires debug)]), [
+	if test "$enableval" = "yes"; then
+		tcl_nano_coverage='true'
+		tcl_nano_debug='true'
+	fi
+])
+
+dnl If we are building a debug release, enable debugging flags
 if test "$tcl_nano_debug" = 'true'; then
 	AC_DEFINE(TCLEXT_TCL_NANO_DEBUG, [1], [Enable debugging build])
 	AX_CHECK_COMPILE_FLAG([-mmpx -fcheck-pointer-bounds], [CFLAGS="$CFLAGS -mmpx -fcheck-pointer-bounds"])
@@ -49,6 +60,16 @@ else
 	AX_CHECK_COMPILE_FLAG([-Wno-deprecated-declarations], [CFLAGS="$CFLAGS -Wno-deprecated-declarations"])
 fi
 AX_CHECK_COMPILE_FLAG([-Wno-sign-compare], [CFLAGS="$CFLAGS -Wno-sign-compare"])
+
+dnl If enabled, do code coverage
+if test "$tcl_nano_coverage" = 'true'; then
+	ENABLE_COVERAGE='true'
+	AC_SUBST(ENABLE_COVERAGE)
+	AX_CHECK_COMPILE_FLAG([-coverage], [
+		CFLAGS="$CFLAGS -coverage"
+		LDFLAGS="$LDFLAGS -coverage"
+	])
+fi
 
 dnl Enable compiler warnings
 AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="-Wall $CFLAGS"])

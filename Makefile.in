@@ -67,6 +67,15 @@ nano.tcl.h: @srcdir@/nano.tcl Makefile
 test: @EXTENSION_TARGET@ pkgIndex.tcl
 	@srcdir@/test/test.tcl .
 
+ifeq (@ENABLE_COVERAGE@,true)
+coverage.dir: test
+	rm -f nano-coverage.info
+	lcov --capture --directory . --output-file nano-coverage.info
+	mkdir coverage.dir
+	genhtml nano-coverage.info --output-directory coverage.dir
+	rm -f nano-coverage.info
+endif
+
 install: @EXTENSION_TARGET@ pkgIndex.tcl @srcdir@/nano.man
 	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
 	$(INSTALL_PROGRAM) @EXTENSION_TARGET@ '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
@@ -75,14 +84,18 @@ install: @EXTENSION_TARGET@ pkgIndex.tcl @srcdir@/nano.man
  
 clean:
 	rm -f nano-amalgamation.c nano-amalgamation.o
-	rm -f @EXTENSION_TARGET@ nano.o
+	rm -f @EXTENSION_TARGET@ nano.o nano.gcda nano.gcno
 	rm -f blake2b.o tweetnacl.o randombytes.o
+	rm -f blake2b.gcda tweetnacl.gcda randombytes.gcda
+	rm -f blake2b.gcno tweetnacl.gcno randombytes.gcno
+	rm -f nano-coverage.info
 
 distclean: clean
 	rm -f Makefile pkgIndex.tcl-shared pkgIndex.tcl-static nano.syms
 	rm -f pkgIndex.tcl
 	rm -f config.log config.status
 	rm -f nano.tcl.h nano.tcl.h.new.1 nano.tcl.h.new.2
+	rm -rf coverage.dir
 
 mrproper: distclean
 	rm -f @srcdir@/configure @srcdir@/aclocal.m4 @srcdir@/config.guess @srcdir@/config.sub @srcdir@/install-sh
