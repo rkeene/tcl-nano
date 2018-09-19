@@ -30,6 +30,7 @@ namespace eval ::nano::network::_dns {}
 # Constants
 set ::nano::block::stateBlockPreamble [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
 set ::nano::block::zero "0000000000000000000000000000000000000000000000000000000000000000"
+set ::nano::balance::zero "00000000000000000000000000000000"
 set ::nano::address::zero $::nano::block::zero
 set ::nano::address::base32alphabet {13456789abcdefghijkmnopqrstuwxyz}
 set ::nano::network::messageTypes {
@@ -1674,6 +1675,53 @@ proc ::nano::network::client::bulk_pull {account {end ""}} {
 	]
 }
 
+proc ::nano::network::client::_bulk_pull_account_flagsParse {direction flag} {
+	switch -- $direction {
+		"toInt" {
+			switch -- $flag {
+				"" - "default" - "pendingHashAndAmount" {
+					set flagValue 0
+				}
+				"pendingAddressOnly" {
+					set flagValue 1
+				}
+				"pendingHashAmountAndAddress" {
+					set flagValue 2
+				}
+				default {
+					if {[string is integer -strict $flag]} {
+						set flagValue $flag
+					} else {
+						return -code error "Invalid flag: $flag"
+					}
+				}
+			}
+
+			return $flagValue
+		}
+		"fromInt" {
+			switch -- $flag {
+				0 - "pendingHashAndAmount" - "" - "default" {
+					set flagValue "pendingHashAndAmount"
+				}
+				1 - "pendingAddressOnly" {
+					set flagValue "pendingAddressOnly"
+				}
+				2 - "pendingHashAmountAndAddress" {
+					set flagValue "pendingHashAmountAndAddress"
+				}
+				default {
+					return -code error "Invalid flag: $flag"
+				}
+			}
+
+			return $flagValue
+		}
+	}
+
+	return -code error "Invalid direction: $direction"
+}
+
 proc ::nano::network::client::bulk_pull_account {account {minPending 0} {flags ""}} {
 	set accountPubKey [::nano::address::toPublicKey $account -binary]
 	set minPendingHex [format %032llx $minPending]
@@ -1682,25 +1730,7 @@ proc ::nano::network::client::bulk_pull_account {account {minPending 0} {flags "
 		return -code error "Invalid amount: $minPending"
 	}
 
-	set flagsInt 0
-	foreach flagName $flags {
-		unset -nocomplain flagValue
-
-		switch -- $flagName {
-			"pendingAddressOnly" {
-				set flagValue 1
-			}
-			default {
-				if {[string is integer -strict $flagName]} {
-					set flagValue $flagName
-				} else {
-					return -code error "Invalid flag: $flagName"
-				}
-			}
-		}
-
-		set flagsInt [expr {$flagsInt | $flagValue}]
-	}
+	set flagsInt [_bulk_pull_account_flagsParse "toInt" $flags]
 
 	return [binary format a32H32c \
 		$accountPubKey \
@@ -1721,20 +1751,43 @@ proc ::nano::network::client::bulk_pull_account_response {sock account {minPendi
 	set frontierBalance [expr {$frontierBalance}]
 
 	set fullPendingInfo true
-	if {[lsearch -exact $flags "pendingAddressOnly"] != -1} {
-		# XXX:TODO: We support numeric flags in the generation
-		# side but not here, should we ?
-		set fullPendingInfo false
+	set flags [_bulk_pull_account_flagsParse "fromInt" $flags]
+
+	set fullPendingInfo true
+	set fullPendingIncludesAddress false
+	switch -- $flags {
+		"pendingAddressOnly" {
+			set fullPendingInfo false
+		}
+		"pendingHashAndAmount" {
+			# This is the default option
+		}
+		"pendingHashAmountAndAddress" {
+			set fullPendingIncludesAddress true
+		}
 	}
 
 	set pendingInfo [list]
+	set pendingAddToDict [list]
 	while true {
 		if {$fullPendingInfo} {
 			set pendingBlockhash [binary encode hex [::nano::network::_recv $sock 32]]
 			set pendingAmount    [binary encode hex [::nano::network::_recv $sock 16]]
 
-			if {$pendingBlockhash eq $::nano::block::zero} {
-				break
+			if {$fullPendingIncludesAddress} {
+				set pendingFrom [binary encode hex [::nano::network::_recv $sock 32]]
+				set pendingFromEncoded [::nano::address::fromPublicKey $pendingFrom]
+				set pendingAddToDict [list from $pendingFromEncoded]
+			}
+
+			if {$pendingBlockhash eq $::nano::block::zero && $pendingAmount eq $::nano::balance::zero} {
+				if {$fullPendingIncludesAddress} {
+					if {$pendingFrom eq $::nano::address::zero} {
+						break
+					}
+				} else {
+					break
+				}
 			}
 
 			set pendingBlockhash [string toupper $pendingBlockhash]
@@ -1744,6 +1797,7 @@ proc ::nano::network::client::bulk_pull_account_response {sock account {minPendi
 			lappend pendingInfo [dict create \
 				blockhash $pendingBlockhash \
 				amount    $pendingAmount \
+				{*}$pendingAddToDict \
 			]
 		} else {
 			set pendingFrom [binary encode hex [::nano::network::_recv $sock 32]]
