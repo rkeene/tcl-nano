@@ -1,6 +1,5 @@
 #! /usr/bin/env tclsh
 
-lappend auto_path ../../build/work
 package require nano
 
 if {[llength $argv] == 0} {
