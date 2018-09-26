@@ -1549,6 +1549,10 @@ proc ::nano::node::_defaultConfig {basis network} {
 		"client_id"     [binary encode hex [::nano::internal::randomBytes 32]]
 	]
 
+	# XXX:TODO: Consider network
+	dict set default_node "peering_port" "7075"
+	dict set default_node "preconfigured_peers" [list "rai.raiblocks.net"]
+
 	catch {
 		set basis_node_database [dict create]
 		set basis_node_database [dict get $basis "node" "database"]
