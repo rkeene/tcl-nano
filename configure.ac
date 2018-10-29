@@ -117,11 +117,7 @@ AC_CHECK_FUNC(getrandom,, [
 
 dnl Sync the RPATH if requested
 if test "$TCLEXT_BUILD" != 'static'; then
-	if test "$TCLEXT_TLS_STATIC_SSL" = 'yes'; then
-		DC_SYNC_RPATH([no])
-	else
-		DC_SYNC_RPATH([yes])
-	fi
+	DC_SYNC_RPATH([yes])
 fi
 
 dnl Setup a stable ABI
