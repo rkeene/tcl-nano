@@ -1546,7 +1546,8 @@ proc ::nano::node::_defaultConfig {basis network} {
 		set basis_node [dict get $basis "node"]
 	}
 	set default_node [dict create \
-		"client_id"     [binary encode hex [::nano::internal::randomBytes 32]]
+		"client_id"     [binary encode hex [::nano::internal::randomBytes 32]] \
+		"bootstrap_connections" "4" \
 	]
 
 	# XXX:TODO: Consider network
