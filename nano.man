@@ -466,7 +466,11 @@ stop sending at, or 256 bits of 0s to indicate that the entire chain should be
 sent.  The payload for Bulk_Pull messages is 64 bytes in size.
 
 The response from a Bulk_Pull request will be a stream of tuples, each
-containing a 256-bit block hash, and a block message.  TODOC: Format
+containing a 8-bit block type identifier, and a block message.  When no more
+blocks are available the response is terminated by sending the block type
+identifier for
+.I not_a_block
+and no block message follows.
 
 .TP
 .B Bulk_Push
