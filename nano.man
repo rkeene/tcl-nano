@@ -728,17 +728,6 @@ is valid for the block passed in.
 .RR
 
 .TP
-.B ::nano::block::hash
-.I blockData
-.RB ? -hex | -binary ?
-.RI " -> " blockHash
-
-Compute the cryptographic hash of a block.  The cryptographic hashing
-algorithm used for Nano is Blake2b.  Blocks are typically identified
-by their hash (i.e., content addressable).
-.HB
-
-.TP
 .B ::nano::block::signBlockHash
 .I blockHash
 .I privateKey
@@ -758,19 +747,6 @@ account.
 .HB
 
 .TP
-.B ::nano::block::sign
-.I blockData
-.I privateKey
-.RB ? -hex | -binary ?
-.RI " -> " signature
-
-This is a convenience procedure which computes the hash of a block given as
-.IR blockData ,
-and then calls
-.BR signBlockHash .
-.HB
-
-.TP
 .B ::nano::block::verifyBlockHash
 .I blockHash
 .I signature
@@ -784,18 +760,6 @@ was signed
 by an account holding the private key that
 corresponds to the public key specified as
 .IR publicKey .
-
-.TP
-.B ::nano::block::verify
-.I blockData
-.I signature
-.I publicKey
-.RI " -> " boolean
-
-This is a convenience procedure which computes the hash of a block given as
-.IR blockData ,
-and then calls
-.BR verifyBlockHash .
 
 .TP
 .B ::nano::block::create::send
