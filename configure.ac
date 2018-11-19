@@ -118,7 +118,7 @@ AC_CHECK_FUNC(getrandom,, [
 dnl Handle specifying where TCLLIB is, for testing
 AC_SUBST(TCLLIB_PATH)
 TCLLIB_PATH='/dev/null'
-AC_ARG_WITH([tcllib-path], AS_HELP_STRING([--with-tcllib-path=<path>], [Specify a path to Tcllib for the test suite]), [
+AC_ARG_WITH([tcllib-path], AS_HELP_STRING([--with-tcllib-path], [Specify a path to Tcllib for the test suite]), [
 	if test "$withval" != "no" -a "$withval" != "yes"; then
 		TCLLIB_PATH="${withval}"
 	fi
