@@ -112,7 +112,7 @@ static int nano_tcl_generate_keypair(ClientData clientData, Tcl_Interp *interp, 
 			return(tglfo_ret);
 		}
 
-		if (seed_index > 0xffffffffL) {
+		if (seed_index > 0xffffffffULL) {
 			Tcl_SetResult(interp, "Seed exceed maximum value", NULL);
 
 			return(TCL_ERROR);
