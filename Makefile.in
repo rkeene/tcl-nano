@@ -65,7 +65,7 @@ nano.tcl.h: @srcdir@/nano.tcl Makefile
 	mv nano.tcl.h.new.2 nano.tcl.h
 
 test: @EXTENSION_TARGET@ pkgIndex.tcl
-	@srcdir@/test/test.tcl .
+	@srcdir@/test/test.tcl --libpath . --libpath @TCLLIB_PATH@
 
 ifeq (@ENABLE_COVERAGE@,true)
 coverage.dir: test

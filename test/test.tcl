@@ -1,6 +1,12 @@
 #! /usr/bin/env tclsh
 
-lappend auto_path [file normalize [lindex $argv 0]]
+foreach {arg val} $argv {
+	switch -exact -- $arg {
+		"--libpath" {
+			lappend auto_path [file normalize $val]
+		}
+	}
+}
 
 package require nano
 
