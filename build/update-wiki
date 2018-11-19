@@ -90,7 +90,7 @@ tclNanoDevelopmentDate="$(date +%d-%b-%Y)"
 # Generate the new manual page entry for the development version
 developmentManPage="$(
 	sed "s/@@VERS@@/${tclNanoDevelopmentVersion}/g;s/@@SHORT_DATE@@/${tclNanoDevelopmentDate}/g" nano.man | \
-	/home/rkeene/devel/tcl-nano/build/work/pkgs/mandoc-1.14.4/INST/bin/mandoc -Thtml -Ofragment | \
+	/opt/appfs/rkeene.org/mandoc/platform/latest/bin/mandoc -Thtml -Ofragment | \
 	sed 's/<div[^>]*>&#x00A0;<\/div>//g;s@\[@\&#91;@g;s@\]@\&#93;@g'
 )"
 updatePage "${wikiPageManual}" "${developmentManPage}"
