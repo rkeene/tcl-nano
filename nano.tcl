@@ -313,7 +313,6 @@ proc ::nano::block::dict::toBlock {blockDict} {
 
 	switch -- $block(type) {
 		"state" {
-			append blockData $::nano::block::stateBlockPreamble
 			append blockData [::nano::address::toPublicKey $block(account)]
 			append blockData [binary decode hex $block(previous)]
 			append blockData [::nano::address::toPublicKey $block(representative)]
@@ -466,7 +465,167 @@ proc ::nano::block::json::fromDict {blockDict} {
 	return $blockJSON
 }
 
+proc ::nano::block::typeIDFromType {type} {
+	set outputFormat decimal
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-dec" - "-decimal" {
+				set outputFormat "decimal"
+			}
+			"-hex" {
+				set outputFormat "hex"
+			}
+			"-binary" {
+				set outputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	switch -- $type {
+		"invalid"     { set typeId 0 }
+		"not_a_block" { set typeId 1 }
+		"send"        { set typeId 2 }
+		"receive"     { set typeId 3 }
+		"open"        { set typeId 4 }
+		"change"      { set typeId 5 }
+		"state"       { set typeId 6 }
+	}
+
+	switch -- $outputFormat {
+		"decimal" {
+			set result $typeId
+		}
+		"hex" {
+			set result [format %02x $typeId]
+		}
+		"bytes" {
+			set result [binary decode hex [format %02x $typeId]]
+		}
+	}
+
+	return $result
+}
+
+proc ::nano::block::typeFromTypeID {typeId args} {
+	set inputFormat decimal
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-dec" - "-decimal" {
+				set inputFormat "decimal"
+			}
+			"-hex" {
+				set inputFormat "hex"
+			}
+			"-binary" {
+				set inputFormat "bytes"
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	switch -- $inputFormat {
+		"decimal" { }
+		"hex" {
+			if {![string match "0x*" $typeId]} {
+				set typeId "0x${typeId}"
+			}
+		}
+		"bytes" {
+			set typeId [binary encode hex $typeId]
+			set typeId "0x${typeId}"
+		}
+	}
+
+	switch -- [format %i $typeId] {
+		0 { set type "invalid" }
+		1 { set type "not_a_block" }
+		2 { set type "send" }
+		3 { set type "receive" }
+		4 { set type "open" }
+		5 { set type "change" }
+		6 { set type "state" }
+	}
+
+	return $type
+}
+
+proc ::nano::block::lengthFromType {type args} {
+	set includeType false
+	set includeWork false
+	set includeSig  false
+	foreach arg $args {
+		switch -exact -- $arg {
+			"-full" {
+				set includeType true
+				set includeWork true
+				set includeSig  true
+			}
+			"-work" {
+				set includeWork true
+			}
+			"-signature" {
+				set includeSig  true
+			}
+			"-type" {
+				set includeType true
+			}
+			default {
+				return -code error "Invalid option: $arg"
+			}
+		}
+	}
+
+	switch -- $type {
+		"invalid" - "not_a_block" {
+			set length 0
+			set includeWork false
+			set includeSig false
+		}
+		"state"   { set length 144 }
+		"open"    { set length 96  }
+		"send"    { set length 80  }
+		"receive" { set length 64  }
+		"change"  { set length 64  }
+		default {
+			return -code error "Unknown type: $type"
+		}
+	}
+
+	if {$includeType} {
+		incr length
+	}
+
+	if {$includeWork} {
+		incr length 8
+	}
+
+	if {$includeSig} {
+		incr length 64
+	}
+
+	return $length
+}
+
+proc ::nano::block::typeFromLength {length} {
+	switch -- $length {
+		144 { set type state }
+		96  { set type open  }
+		80  { set type send  }
+		default {
+			return -code error "Ambigious"
+		}
+	}
+
+	return $type
+}
+
 proc ::nano::block::dict::fromBlock {blockData args} {
+	set block(_blockData) $blockData
 	set block(type) ""
 	set addressPrefix "nano_"
 	foreach arg $args {
@@ -489,13 +648,10 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 	}
 
 	if {$block(type) eq ""} {
-		switch -- [string length $blockData] {
-			176 { set block(type) state   }
-			96  { set block(type) open    }
-			80  { set block(type) send    }
-			default {
-				return -code error "Unable to parse block, must specify type"
-			}
+		if {[catch {
+			set block(type) [::nano::block::typeFromLength [string length $blockData]]
+		}]} {
+			return -code error "Unable to parse block, must specify type"
 		}
 	}
 
@@ -506,45 +662,50 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 
 	switch -- $block(type) {
 		"state" {
-			binary scan $blockData a32a32H64a32H32H64 \
-				block(header) \
+			binary scan $blockData a32H64a32H32H64H128H16 \
 				block(account) \
 				block(previous) \
 				block(representative) \
 				block(balance) \
-				block(link)
-
-			if {$block(header) ne $::nano::block::stateBlockPreamble} {
-				return -code error "Invalid block"
-			}
+				block(link) \
+				block(signature) \
+				block(work)
 		}
 		"open" {
-			binary scan $blockData H64a32a32 \
+			binary scan $blockData H64a32a32H128H16 \
 				block(source) \
 				block(representative) \
-				block(account)
+				block(account) \
+				block(signature) \
+				block(work)
 
 			set block(_workData) $block(account)
 		}
 		"send" {
-			binary scan $blockData H64a32H32 \
+			binary scan $blockData H64a32H32H128H16 \
 				block(previous) \
 				block(destination) \
-				block(balance)
+				block(balance) \
+				block(signature) \
+				block(work)
 
 			set block(_workData) $block(previous)
 		}
 		"receive" {
-			binary scan $blockData H64H64 \
+			binary scan $blockData H64H64H128H16 \
 				block(previous) \
-				block(source)
+				block(source) \
+				block(signature) \
+				block(work)
 
 			set block(_workData) $block(previous)
 		}
 		"change" {
-			binary scan $blockData H64a32 \
+			binary scan $blockData H64a32H128H16 \
 				block(previous) \
-				block(representative)
+				block(representative) \
+				block(signature) \
+				block(work)
 
 			set block(_workData) $block(previous)
 		}
@@ -553,7 +714,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 		}
 	}
 
-	foreach field {account representative link_as_account destination balance} {
+	foreach field {account representative link_as_account destination balance work signature} {
 		if {![info exists block($field)]} {
 			continue
 		}
@@ -568,7 +729,6 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 		}
 	}
 
-	set block(_blockData) $blockData
 
 	return [array get block]
 }
@@ -581,7 +741,7 @@ proc ::nano::block::json::fromBlock {blockData args} {
 	return $blockJSON
 }
 
-proc ::nano::block::hash {blockData args} {
+proc ::nano::block::_hash {blockData args} {
 	set outputFormat "bytes"
 	foreach arg $args {
 		switch -exact -- $arg {
@@ -604,6 +764,22 @@ proc ::nano::block::hash {blockData args} {
 	}
 
 	return $hash
+}
+
+proc ::nano::block::dict::toHash {blockDict args} {
+	if {[dict get $blockDict type] eq "state"} {
+		set blockData $::nano::block::stateBlockPreamble
+	}
+
+	append blockData [::nano::block::dict::toBlock $blockDict]
+
+	tailcall ::nano::block::_hash $blockData {*}$args
+}
+
+proc ::nano::block::json::toHash {blockJSON args} {
+	set blockDict [::nano::block::dict::fromJSON $blockJSON]
+
+	tailcall ::nano::block::dict::toHash $blockDict {*}$args
 }
 
 proc ::nano::block::signBlockHash {blockHash privateKey args} {
@@ -639,8 +815,8 @@ proc ::nano::block::signBlockHash {blockHash privateKey args} {
 	return $signature
 }
 
-proc ::nano::block::sign {blockData args} {
-	set blockHash [::nano::block::hash $blockData]
+proc ::nano::block::_sign {blockData args} {
+	set blockHash [::nano::block::_hash $blockData]
 
 	tailcall ::nano::block::signBlockHash $blockHash {*}$args
 }
@@ -663,8 +839,8 @@ proc ::nano::block::verifyBlockHash {blockHash signature publicKey} {
 	return $valid
 }
 
-proc ::nano::block::verifyBlock {blockData args} {
-	set blockHash [::nano::block::hash $blockData]
+proc ::nano::block::_verifyBlock {blockData args} {
+	set blockHash [::nano::block::_hash $blockData]
 
 	tailcall ::nano::block::verifyBlockHash $blockHash {*}$args
 }
@@ -689,7 +865,11 @@ proc ::nano::block::dict::_addBlockHash {blockDict} {
 	set blockDict [_addBlockData $blockDict]
 	set blockData [dict get $blockDict _blockData]
 
-	set blockHash [::nano::block::hash $blockData -binary]
+	if {[dict get $blockDict type] eq "state"} {
+		set blockData "${::nano::block::stateBlockPreamble}${blockData}"
+	}
+
+	set blockHash [::nano::block::_hash $blockData -binary]
 
 	dict set blockDict _blockHash $blockHash
 
@@ -1629,6 +1809,9 @@ proc ::nano::node::setLedgerHandle {handle} {
 }
 
 proc ::nano::node::configure {network args} {
+	package require ip
+	package require dns
+
 	# Set default options
 	## XXX:TODO: Handle other networks
 	if {$network ne "main"} {
@@ -1917,9 +2100,9 @@ proc ::nano::network::client::keepalive {} {
 }
 
 proc ::nano::network::client {sock messageType args} {
-	set versionUsing 12
-	set versionMin 1
-	set versionMax 12
+	set versionUsing 7
+	set versionMin 7
+	set versionMax 7
 	set extensions 0
 
 	set messageType [string tolower $messageType]
@@ -2305,7 +2488,7 @@ proc ::nano::network::server {message {networkType "bootstrap"}} {
 	# XXX:TODO: Check versions and extensions
 
 	set messageType [lindex $::nano::network::messageTypes $messageTypeID]
-puts "*** Incoming: $messageType ($messageTypeID on $networkType) [binary encode hex $message]"
+#puts "*** Incoming: $messageType ($messageTypeID on $networkType) [binary encode hex $message]"
 
 	set retval ""
 	if {[catch {
@@ -2372,9 +2555,7 @@ proc ::nano::node::realtime {} {
 
 proc ::nano::node::start {} {
 	package require defer
-	package require ip
 	package require udp
-	package require dns
 
 	coroutine ::nano::node::bootstrap::run ::nano::node::bootstrap
 	coroutine ::nano::node::realtime::run ::nano::node::realtime
