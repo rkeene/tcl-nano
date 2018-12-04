@@ -20,11 +20,13 @@ namespace eval ::nano::ledger::lmdb {}
 namespace eval ::nano::rpc {}
 namespace eval ::nano::rpc::client {}
 namespace eval ::nano::balance {}
-namespace eval ::nano::node::server {}
 namespace eval ::nano::node::bootstrap {}
 namespace eval ::nano::node::realtime {}
 namespace eval ::nano::network::client {}
 namespace eval ::nano::network::server {}
+namespace eval ::nano::protocol::create {}
+namespace eval ::nano::protocol::parse {}
+namespace eval ::nano::protocol::extensions {}
 namespace eval ::nano::network::_dns {}
 
 # Constants
@@ -74,6 +76,12 @@ set ::nano::balance::_conversion {
 	Mraw  1000000
 	Kraw  1000
 	raw   1
+}
+set ::nano::protocol::extensions {
+	node_id_handshake {
+		query 1
+		response 2
+	}
 }
 
 # Address management functions
@@ -465,7 +473,7 @@ proc ::nano::block::json::fromDict {blockDict} {
 	return $blockJSON
 }
 
-proc ::nano::block::typeIDFromType {type} {
+proc ::nano::block::typeIDFromType {type args} {
 	set outputFormat decimal
 	foreach arg $args {
 		switch -exact -- $arg {
@@ -492,6 +500,7 @@ proc ::nano::block::typeIDFromType {type} {
 		"open"        { set typeId 4 }
 		"change"      { set typeId 5 }
 		"state"       { set typeId 6 }
+		default       { error "Invalid type: $type" }
 	}
 
 	switch -- $outputFormat {
@@ -549,6 +558,9 @@ proc ::nano::block::typeFromTypeID {typeId args} {
 		4 { set type "open" }
 		5 { set type "change" }
 		6 { set type "state" }
+		default {
+			error "Invalid type ID: $typeId"
+		}
 	}
 
 	return $type
@@ -1726,7 +1738,7 @@ proc ::nano::node::_defaultConfig {basis network} {
 		set basis_node [dict get $basis "node"]
 	}
 	set default_node [dict create \
-		"client_id"     [binary encode hex [::nano::internal::randomBytes 32]] \
+		"client_id_private_key"     [::nano::key::newKey] \
 		"bootstrap_connections" "4" \
 	]
 
@@ -1838,15 +1850,43 @@ proc ::nano::node::configure {network args} {
 #	::nano::node::setLedgerHandle $dbHandle
 }
 
+proc ::nano::node::user_log {line} {
+	puts stderr $line
+}
+
 proc ::nano::node::log {message {level "debug"}} {
 	set linePrefix ""
 	foreach line [split $message "\n"] {
-		puts stderr [format {%-40s %10s [%5s] %s} [::info coroutine] [clock seconds] $level ${linePrefix}$line]
+		::nano::node::user_log [format {%-40s %10s [%5s] %s} [::info coroutine] [clock seconds] $level ${linePrefix}$line]
 		set linePrefix "    "
 	}
 }
 
-proc ::nano::network::client::bulk_pull {account {end ""}} {
+proc ::nano::protocol::extensions::get {messageType extensions} {
+	::set flags [list]
+	foreach {checkFlagName checkFlag} [dict get $::nano::protocol::extensions $messageType] {
+		if {($extensions & $checkFlag) == $checkFlag} {
+			lappend flags $checkFlagName
+		}
+	}
+	return $flags
+}
+
+proc ::nano::protocol::extensions::set {messageType extensionsVar flag} {
+	upvar 1 $extensionsVar extensions
+	::set value [dict get $::nano::protocol::extensions $messageType $flag]
+	::set extensions [expr {$extensions | $value}]
+}
+
+proc ::nano::protocol::extensions::unset {messageType extensionsVar flag} {
+	upvar 1 $extensionsVar extensions
+
+	::set value [dict get $::nano::protocol::extensions $messageType $flag]
+	::set extensions [expr {$extensions & ((~$value) & 0xffff)}]
+}
+
+
+proc ::nano::protocol::create::bulk_pull {account {end ""}} {
 	set accountPubKey [::nano::address::toPublicKey $account -binary]
 
 	if {$end ne ""} {
@@ -1857,13 +1897,13 @@ proc ::nano::network::client::bulk_pull {account {end ""}} {
 		set end [binary decode hex $::nano::block::zero]
 	}
 
-	return [binary format a32a32 \
+	return [dict create data [binary format a32a32 \
 		$accountPubKey \
 		$end \
-	]
+	]]
 }
 
-proc ::nano::network::client::_bulk_pull_account_flagsParse {direction flag} {
+proc ::nano::protocol::create::_bulk_pull_account_flagsParse {direction flag} {
 	switch -- $direction {
 		"toInt" {
 			switch -- $flag {
@@ -1910,7 +1950,7 @@ proc ::nano::network::client::_bulk_pull_account_flagsParse {direction flag} {
 	return -code error "Invalid direction: $direction"
 }
 
-proc ::nano::network::client::bulk_pull_account {account {minPending 0} {flags ""}} {
+proc ::nano::protocol::create::bulk_pull_account {account {minPending 0} {flags ""}} {
 	set accountPubKey [::nano::address::toPublicKey $account -binary]
 	set minPendingHex [format %032llx $minPending]
 
@@ -1920,14 +1960,14 @@ proc ::nano::network::client::bulk_pull_account {account {minPending 0} {flags "
 
 	set flagsInt [_bulk_pull_account_flagsParse "toInt" $flags]
 
-	return [binary format a32H32c \
+	return [dict create data [binary format a32H32c \
 		$accountPubKey \
 		$minPendingHex \
 		$flagsInt \
-	]
+	]]
 }
 
-proc ::nano::network::client::bulk_pull_account_response {sock account {minPending 0} {flags ""}} {
+proc ::nano::protocol::parse::bulk_pull_account_response {sock account {minPending 0} {flags ""}} {
 	set frontierBlockhash [::nano::network::_recv $sock 32]
 	set frontierBalance   [::nano::network::_recv $sock 16]
 
@@ -2014,7 +2054,7 @@ proc ::nano::network::client::bulk_pull_account_response {sock account {minPendi
 	return $retval
 }
 
-proc ::nano::network::client::frontier_req {{startAccount ""} {age ""} {count ""}} {
+proc ::nano::protocol::create::frontier_req {{startAccount ""} {age ""} {count ""}} {
 	if {$startAccount eq ""} {
 		set accountPubKey [binary decode hex $::nano::address::zero]
 	} else {
@@ -2029,13 +2069,58 @@ proc ::nano::network::client::frontier_req {{startAccount ""} {age ""} {count ""
 		set count [expr {2**32-1}]
 	}
 
-	return [binary format a32ii $accountPubKey $age $count]
+	return [dict create data [binary format a32ii $accountPubKey $age $count]]
 }
 
-proc ::nano::network::client::node_id_handshake {nodeID} {
-	set nodeID [binary decode hex $nodeID]
+proc ::nano::protocol::create::node_id_handshake {types args} {
+	array set argInfo $args
+	set extensions 0
+	set data ""
 
-	return $nodeID
+	if {[llength $types] < 1} {
+		return -code error "Invalid types specified: (none)"
+	}
+
+	foreach type $types {
+		if {$type in {"query" "response"}} {
+			continue
+		}
+
+		return -code error "Invalid type specified: $type"
+	}
+
+	if {"query" in $types} {
+		::nano::protocol::extensions::set "node_id_handshake" extensions "query"
+
+		# XXX:TODO: Verify this is exactly a 32-byte nonce
+
+		append data $argInfo(-query)
+	}
+
+	if {"response" in $types} {
+		::nano::protocol::extensions::set "node_id_handshake" extensions "response"
+
+		if {![info exists argInfo(-privateKey)]} {
+			set argInfo(-privateKey) [::nano::key::newKey]
+		}
+
+		set publicKey [::nano::key::publicKeyFromPrivateKey $argInfo(-privateKey) -binary]
+		set signature [::nano::internal::signDetached $argInfo(-query) $argInfo(-privateKey)]
+
+		if {[string length $argInfo(-query)] != 32} {
+			return -code error "Invalid input data"
+		}
+
+		if {[string length $publicKey] != 32 || [string length $signature] != 64} {
+			return -code error "Invalid output data"
+		}
+
+		set response [binary format a32a64 $publicKey $signature]
+
+		append data $response
+	}
+
+	return [dict create extensions $extensions data $data]
 }
 
 proc ::nano::network::_localIP {version} {
@@ -2068,42 +2153,179 @@ proc ::nano::network::_localIP {version} {
 	return $::nano::network::_localIP($version)
 }
 
-proc ::nano::network::client::keepalive {} {
-	# Encode our local IP address in the packet
-	set localIPs [list]
-	foreach ipVersion {v4 v6} {
-		unset -nocomplain localIP
-
-		catch {
-			set localIP [::nano::network::_localIP $ipVersion]
-		}
-
-		if {![info exists localIP]} {
-			continue
-		}
-
-		lappend localIPs [binary decode hex [string map [list ":" ""] [::ip::normalize $localIP]]]
-	}
-
-	# Encode port as a 16-bit integer in network byte order (big endian)
-	set localPort [dict get $::nano::node::configuration "node" "peering_port"]
-	set localPort [binary format s $localPort]
-
+proc ::nano::protocol::create::keepalive {ipPortDictList args} {
 	set retval ""
+
+	# Allow creating an empty keepalive
+	array set argInfo {
+		-local true
+	}
+	array set argInfo $args
+
+	if {$argInfo(-local)} {
+		set localPort [dict get $::nano::node::configuration "node" "peering_port"]
+		set ipPortDictListHead [list]
+		foreach ipVersion {v4 v6} {
+			unset -nocomplain localIP
+
+			catch {
+				set localIP [::nano::network::_localIP $ipVersion]
+			}
+
+			if {![info exists localIP]} {
+				continue
+			}
+
+			lappend ipPortDictListHead [dict create address $localIP port $localPort]
+		}
+		set ipPortDictList [concat $ipPortDictListHead $ipPortDictList]
+	}
+
+	if {[llength $ipPortDictList] == 0} {
+		return [dict create data ""]
+	}
+
 	while {[string length $retval] < 144} {
-		foreach localIP $localIPs {
-			append retval "${localIP}${localPort}"
+		foreach ipPortDict $ipPortDictList {
+			set ip [dict get $ipPortDict address]
+			set port [dict get $ipPortDict port]
+
+			# Encode IP address as a byte array
+			if {[::ip::version $ip] == 4} {
+				# Convert to IPv6 if needed
+				set ip "::ffff:$ip"
+			}
+
+			set ip [binary decode hex [string map [list ":" ""] [::ip::normalize $ip]]]
+
+			# Encode port as a 16-bit integer in network byte order (big endian)
+			set port [binary format s $port]
+
+			append retval "${ip}${port}"
 		}
 	}
 
-	return [string range $retval 0 143]
+	return [dict create data [string range $retval 0 143]]
 }
 
-proc ::nano::network::client {sock messageType args} {
-	set versionUsing 7
-	set versionMin 7
-	set versionMax 7
-	set extensions 0
+proc ::nano::protocol::create::confirm_req {blockDict} {
+	set blockData [::nano::block::dict::toBlock $blockDict]
+	set blockType [dict get $blockDict type] 
+	set blockTypeID [::nano::block::typeIDFromType $blockType -decimal]
+
+	set retval(blockType) $blockTypeID
+	set retval(data) $blockData
+
+	return [array get retval]
+}
+
+proc ::nano::protocol::parse::confirm_req {extensions blockData} {
+	set blockTypeID [expr {($extensions >> 8) & 0x0f}]
+	set blockType [::nano::block::typeFromTypeID $blockTypeID]
+	set blockDict [::nano::block::dict::fromBlock $blockData -type=$blockType]
+
+	# XXX:TEMPORARY
+	dict unset blockDict _blockData
+	dict unset blockDict _workData
+
+	set retval(blockType) $blockType
+	set retval(block) $blockDict
+
+	return [array get retval]
+}
+
+proc ::nano::protocol::parse::confirm_ack {extensions blockData} {
+	set blockTypeID [expr {($extensions >> 8) & 0x0f}]
+	set blockType [::nano::block::typeFromTypeID $blockTypeID]
+
+	# Header
+	binary scan $blockData H64H128wa* \
+		retval(voteAccount) \
+		retval(voteSignature) \
+		retval(voteSequence) \
+		newBlockData
+
+	set blockData $newBlockData
+
+	# Determine whether or not this is a vote-by-hash block 
+	set voteType "full"
+	if {$blockType eq "not_a_block"} {
+		set voteType "hash-only"
+	}
+	set retval(voteType) $voteType
+
+	# Generate the data to hash and verify
+	set signedData ""
+	if {$voteType eq "hash-only"} {
+		### Vote-by-hash blocks have a prefix containing the bytes "vote "
+		append signedData "vote "
+	}
+
+	# Process the vote data
+	if {$voteType eq "hash-only"} {
+		set retval(hashes) [list]
+		while {[string length $blockData] >= 32} {
+			binary scan $blockData H64a* hash blockData
+
+			lappend retval(hashes) $hash
+			append signedData [binary decode hex $hash]
+		}
+	} else {
+		set blockDict [::nano::block::dict::fromBlock $blockData -type=$blockType]
+		set blockHash [::nano::block::dict::toHash $blockDict -hex]
+		append signedData [binary decode hex $blockHash]
+
+		# XXX:TEMPORARY
+		dict unset blockDict _blockData
+		dict unset blockDict _workData
+
+		set retval(blockType) $blockType
+		set retval(hashes) [list $blockHash]
+		set retval(block) $blockDict
+	}
+
+	# Add the sequence number to the signed data
+	append signedData [binary format w $retval(voteSequence)]
+
+	# Verify signature of the hash
+	set valid false
+	catch {
+		set valid [::nano::internal::verifyDetached \
+			[::nano::internal::hashData $signedData $::nano::block::hashLength] \
+			[binary decode hex $retval(voteSignature)] \
+			[binary decode hex $retval(voteAccount)] \
+		]
+	}
+
+	# Convert the account to an account form
+	set retval(voteAccount) [::nano::address::fromPublicKey $retval(voteAccount)]
+
+	# If the signature is invalid, clean things up a bit
+	if {!$valid} {
+		set retval(valid) false
+
+		# If the vote isn't valid, don't create entries regarding this vote
+		foreach renameKey [array names retval] {
+			if {$renameKey eq "valid"} {
+				continue
+			}
+
+			set retval(invalid_${renameKey}) $retval($renameKey)
+			unset retval $renameKey
+		}
+	} else {
+		set retval(valid) true
+	}
+
+	return [array get retval]
+}
+
+proc ::nano::protocol::create {messageType args} {
+	set versionUsing 14
+	set versionMin 13
+	set versionMax $versionUsing
+	set messageInfo(extensions) 0
+	set messageInfo(blockType) 0
 
 	set messageType [string tolower $messageType]
 	set messageTypeID [lsearch -exact $::nano::network::messageTypes $messageType]
@@ -2111,21 +2333,29 @@ proc ::nano::network::client {sock messageType args} {
 		return -code error "Invalid message type: $messageType"
 	}
 
-	set blockType 0
-	set extensions [expr {$extensions | (($blockType << 8) & 0x0f00)}]
+	array set messageInfo [::nano::protocol::create::${messageType} {*}$args]
 
-	set message [binary format a2ccccS \
+	set messageInfo(extensions) [expr {$messageInfo(extensions) | (($messageInfo(blockType) << 8) & 0x0f00)}]
+
+	set message [binary format a2ccccs \
 		RC \
 		$versionMax \
 		$versionUsing \
 		$versionMin \
 		$messageTypeID \
-		$extensions \
+		$messageInfo(extensions) \
 	]
 
-	append message [::nano::network::client::${messageType} {*}$args]
+	append message $messageInfo(data)
 
-	::nano::node::log "Sending message [binary encode hex $message] to socket $sock"
+	return $message
+}
+
+
+proc ::nano::network::client {sock messageType args} {
+	set message [::nano::protocol::create $messageType {*}$args]
+
+	::nano::node::log "Sending message [binary encode hex $message] ([::nano::protocol::parse $message]) to socket $sock"
 
 	catch {
 		if {[dict get $sock "type"] eq "realtime"} {
@@ -2143,7 +2373,7 @@ proc ::nano::network::client {sock messageType args} {
 	puts -nonewline $sock $message
 	flush $sock
 
-	set responseCommand ::nano::network::client::${messageType}_response
+	set responseCommand ::nano::protocol::parse::${messageType}_response
 	set response ""
 	if {[info command $responseCommand] ne ""} {
 		set response [$responseCommand $sock {*}$args]
@@ -2264,7 +2494,7 @@ proc ::nano::node::bootstrap {} {
 	set ::nano::node::bootstrap::frontier_req_running false
 
 	while true {
-		set peerInfoList [::nano::network::getPeers]
+		set peerInfoList [::nano::node::getPeers]
 		::nano::node::log "Have [llength $peerInfoList] peers"
 
 		foreach peerInfo $peerInfoList {
@@ -2290,9 +2520,9 @@ proc ::nano::node::bootstrap {} {
 
 proc ::nano::network::_connect {host port} {
 	if {[info coroutine] eq ""} {
-		set sock [socket $host $port]
+		set sock [::socket $host $port]
 	} else {
-		set sock [socket -async $host $port]
+		set sock [::socket -async $host $port]
 		chan event $sock writable [info coroutine]
 		chan event $sock readable [info coroutine]
 
@@ -2374,12 +2604,12 @@ proc ::nano::node::_sleep {ms {verbose 1}} {
 	yield
 }
 
-proc ::nano::network::getPeers {} {
+proc ::nano::node::getPeers {} {
 	if {[info exists ::nano::node::configuration]} {
 		set peers [dict get $::nano::node::configuration node preconfigured_peers]
 		set defaultPeerPort [dict get $::nano::node::configuration node peering_port]
 	} else {
-		error "Running without the node is currently unsupported"
+		return [list]
 	}
 
 	set completePeers [list]
@@ -2394,14 +2624,25 @@ proc ::nano::network::getPeers {} {
 	set now [clock seconds]
 	foreach {peerKeyInfo peerInfo} [array get ::nano::node::peers] {
 		set lastSeen [dict get $peerInfo "lastSeen"]
-		if {($now - $lastSeen) > (2 * 60 * 60)} {
+		set address [dict get $peerKeyInfo "address"]
+		set peerPort [dict get $peerKeyInfo "port"]
+		set peerKey [dict create address $peer port $peerPort]
+
+		if {($now - $lastSeen) > (5 * 60)} {
+			unset -nocomplain ::nano::node::peers($peerKeyInfo)
+			unset -nocomplain ::nano::node::_node_id_nonces($peerKey)
 			continue
 		}
 
-		set address [dict get $peerKeyInfo "address"]
-		set peerPort [dict get $peerKeyInfo "port"]
+		lappend completePeers $peerKey
+	}
 
-		lappend completePeers [dict create address $peer port $peerPort]
+	# Cleanup nonces while we are here
+	foreach {peerKey peerInfo} [array get ::nano::node::_node_id_nonces] {
+		set lastSeen [dict get $peerInfo "lastSeen"]
+		if {($now - $lastSeen) > (5 * 60)} {
+			unset ::nano::node::_node_id_nonces($peerKey)
+		}
 	}
 
 	set completePeers [::nano::node::_randomSortList -unique $completePeers]
@@ -2413,17 +2654,17 @@ proc ::nano::network::getPeers {} {
 	return $retval
 }
 
-proc ::nano::network::server::keepalive {blockData} {
+proc ::nano::protocol::parse::keepalive {extensions messageData} {
 	set peers [list]
-	while {$blockData ne ""} {
+	while {$messageData ne ""} {
 		# Parse an address and port pair
-		set foundElements [binary scan $blockData H32s address port]
+		set foundElements [binary scan $messageData H32s address port]
 		if {$foundElements != 2} {
 			break
 		}
 
 		# Remove the parsed portion
-		set blockData [string range $blockData 18 end]
+		set messageData [string range $messageData 18 end]
 
 		# Convert the hex-notation to an IPv6 address
 		set address [string trim [regsub -all {....} $address {&:}] ":"]
@@ -2440,59 +2681,210 @@ proc ::nano::network::server::keepalive {blockData} {
 		lappend peers [dict create "address" $address "port" $port]
 	}
 
-	if {$blockData ne ""} {
-		return -code error "Invalid keepalive packet [binary encode hex $blockData]: Had extra bytes"
-	}
-
-	if {[llength $peers] != 8} {
-		return -code error "Invalid keepalive packet [binary encode hex $blockData]: Did not contain exactly 8 address+port tuples"
+	if {$messageData ne ""} {
+		return -code error "Invalid keepalive packet [binary encode hex $messageData]: Had extra bytes"
 	}
 
 	return [dict create "peers" $peers]
 }
 
-proc ::nano::node::server::keepalive {blockData} {
+proc ::nano::network::server::keepalive {messageDict} {
 	set now [clock seconds]
 
-	set peers [dict get [::nano::network::server::keepalive $blockData] "peers"]
+	set peers [dict get $messageDict "peers"]
 
 	foreach peer $peers {
 		set address [dict get $peer "address"]
 		set port [dict get $peer "port"]
 
-		set ::nano::node::peers([dict create address $address port $port]) [dict create lastSeen $now]
+		# Canonicalize the peer name to a key
+		set peer [dict create address $address port $port]
+
+		# If this peer is not already known, contact them requesting a handshake
+		if {![info exists ::nano::node::peers($peer)]} {
+			set node_id_nonce [::nano::internal::randomBytes 32]
+			set ::nano::node::_node_id_nonces($peer) [dict create query $node_id_nonce lastSeen $now]
+
+			set peerSock [::nano::node::socket realtime $address $port]
+			::nano::network::client $peerSock "node_id_handshake" query -query $node_id_nonce
+		}
 	}
+
+	return ""
 }
 
-proc ::nano::network::server::publish {blockData} {
-	#puts "block: [binary encode hex $blockData]"
-#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036f4e1ff833324efc81c237776242928ef76a2cdfaa53f4c4530ee39bfff1977e26e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fc492fd20e57d048e000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465169006f988549a8b1e20e0a09b4b4dcae5397f6fcc4d507675f58c2b29ae02341b0a4fe562201a61bf27481aa4567c287136b4fd26b4840c93c42c7d1f5c518503d68ec561af4b8cf8
-#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036fa5e3647d3d296ec72baea013ba7fa1bf5c3357c33c90196f078ba091295e6e03e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fb2604ebd1fe098b8000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465165287cd9c61752dc9d011f666534dbdc10461e927503f9599791d73b1cca7fdc032d76db3f91e5b5c3d6206fa48b01bd08da4a89f2e880242e9917cfc3db80d0b9bfe8e6d1dd183d5
+proc ::nano::protocol::parse::node_id_handshake {extensions messageData} {
+	array set result [list]
+
+	set flags [nano::protocol::extensions::get "node_id_handshake" $extensions]
+	set result(flags) $flags
+
+	if {"query" in $flags} {
+		binary scan $messageData H64a* result(query) messageData
+	}
+
+	if {"response" in $flags} {
+		binary scan $messageData H64H128 result(key) result(signature)
+	}
+
+	return [array get result]
 }
 
-proc ::nano::network::server {message {networkType "bootstrap"}} {
-	set messageParsed [binary scan $message a2ccccsa* \
-		packetMagic \
-		versionMax \
-		versionUsing \
-		versionMin \
-		messageTypeID \
-		extensions \
-		args
-	]
+proc ::nano::network::server::node_id_handshake {messageDict} {
+	set retval ""
 
-	if {$packetMagic ne "RC"} {
+	if {"query" in [dict get $messageDict flags]} {
+		set query [dict get $messageDict query]
+		set retval [dict create "invoke_client" [list node_id_handshake response -query [binary decode hex $query]]]
+	}
+
+	if {"response" in [dict get $messageDict flags]} {
+		set peerInfo [dict get $messageDict socket remote]
+		set peerAddress [lindex $peerInfo 0]
+		set peerPort [lindex $peerInfo 1]
+		set peer [dict create address $peerAddress port $peerPort]
+
+		# XXX:TODO: Verify the nonce
+		if {![info exists ::nano::node::_node_id_nonces($peer)]} {
+			return ""
+		}
+		set sentNonce $::nano::node::_node_id_nonces($peer)
+		unset ::nano::node::_node_id_nonces($peer)
+
+		# Add the peer to our list of peers
+		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
+	}
+
+	return $retval
+}
+
+proc ::nano::network::server::confirm_ack {messageDict} {
+	# keep statistics
+	dict with messageDict {}
+
+	incr ::nano::node::stats([list confirm_ack valid $valid])
+	if {!$valid} {
 		return ""
 	}
 
-	# XXX:TODO: Check versions and extensions
+	incr ::nano::node::stats([list confirm_ack rep $voteAccount valid $valid])
 
-	set messageType [lindex $::nano::network::messageTypes $messageTypeID]
-#puts "*** Incoming: $messageType ($messageTypeID on $networkType) [binary encode hex $message]"
+	incr ::nano::node::stats([list confirm_ack voteType $voteType])
+	incr ::nano::node::stats([list confirm_ack rep $voteAccount voteType $voteType])
 
-	set retval ""
+	if {![info exists ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence])]} {
+		set ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) $voteSequence
+	} else {
+		if {$::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) > $voteSequence} {
+			set ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) $voteSequence
+		}
+	}
+
+	if {![info exists ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence])]} {
+		set ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) $voteSequence
+	} else {
+		if {$::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) < $voteSequence} {
+			set ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) $voteSequence
+		}
+	}
+
+	set votedOn [llength $hashes]
+
+	incr ::nano::node::stats([list confirm_ack votedOnCount]) $votedOn
+	incr ::nano::node::stats([list confirm_ack rep $voteAccount votedOnCount]) $votedOn
+
+	foreach hash $hashes {
+		set ::nano::node::_stats_seen_hashes($hashes) 1
+		set ::nano::node::_stats_seen_hashes_by_rep([list $voteAccount $hashes]) 1
+	}
+
+	set ::nano::node::stats([list confirm_ack votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes]]
+	set ::nano::node::stats([list confirm_ack rep $voteAccount votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes_by_rep [list $voteAccount *]]]
+
+	return ""
+}
+
+proc ::nano::protocol::parse::publish {extensions messageData} {
+	set blockTypeID [expr {($extensions >> 8) & 0x0f}]
+	set blockType [::nano::block::typeFromTypeID $blockTypeID]
+	set blockDict [::nano::block::dict::fromBlock $messageData -type=$blockType]
+
+	# XXX:TEMPORARY
+	dict unset blockDict _blockData
+	dict unset blockDict _workData
+
+	set retval(blockType) $blockType
+	set retval(block) $blockDict
+
+	return [array get retval]
+}
+
+proc ::nano::network::server::publish {messageDict} {
+	#puts "block: [binary encode hex $blockData]"
+#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036f4e1ff833324efc81c237776242928ef76a2cdfaa53f4c4530ee39bfff1977e26e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fc492fd20e57d048e000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465169006f988549a8b1e20e0a09b4b4dcae5397f6fcc4d507675f58c2b29ae02341b0a4fe562201a61bf27481aa4567c287136b4fd26b4840c93c42c7d1f5c518503d68ec561af4b8cf8
+#9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036fa5e3647d3d296ec72baea013ba7fa1bf5c3357c33c90196f078ba091295e6e03e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fb2604ebd1fe098b8000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465165287cd9c61752dc9d011f666534dbdc10461e927503f9599791d73b1cca7fdc032d76db3f91e5b5c3d6206fa48b01bd08da4a89f2e880242e9917cfc3db80d0b9bfe8e6d1dd183d5
+	return ""
+}
+
+# Namespace ::nano::protocol::parse deals with the network level protocol (outside the node)
+# Namespace ::nano::network::server deals with the node's actual interaction with the network
+proc ::nano::protocol::parse {message} {
+	set messageParsed [binary scan $message a2ccccsa* \
+		result(packetMagic) \
+		result(versionMax) \
+		result(versionUsing) \
+		result(versionMin) \
+		result(messageTypeID) \
+		result(extensions) \
+		newBlockData
+	]
+
+	if {![info exists newBlockData]} {
+		return ""
+	}
+	set blockData $newBlockData
+
+	if {![info exists result(packetMagic)] || ![info exists result(messageTypeID)] || ![info exists result(extensions)]} {
+		return ""
+	}
+
+	switch -- $result(packetMagic) {
+		"RC" {
+			set result(network) "main"
+		}
+		default {
+			return ""
+		}
+	}
+
+	set result(messageType) [lindex $::nano::network::messageTypes $result(messageTypeID)]
+
 	if {[catch {
-		set retval [::nano::node::server::${messageType} $args]
+		set result(messageDict) [::nano::protocol::parse::$result(messageType) $result(extensions) $blockData]
+	} err]} {
+		if {![string match "invalid command name *" $err]} {
+			::nano::node::log "Error parsing $result(messageType): $err"
+		}
+	}
+
+	return [array get result]
+}
+
+proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
+	set messageData [::nano::protocol::parse $message]
+	dict with messageData {}
+
+	::nano::node::log "*** Incoming: $messageType ($messageTypeID on $networkType; from $peerSock) [binary encode hex $message] ($messageData)"
+
+	if {![info exists messageDict]} {
+		return ""
+	}
+
+	dict set messageDict socket $peerSock
+
+	set retval [dict create]
+	if {[catch {
+		set retval [::nano::network::server::${messageType} $messageDict]
 	} err]} {
 		if {![string match "invalid command name *" $err]} {
 			::nano::node::log "Error handling ${messageType}: $err"
@@ -2502,6 +2894,45 @@ proc ::nano::network::server {message {networkType "bootstrap"}} {
 	return $retval
 }
 
+proc ::nano::node::socket {type address port} {
+	if {$type eq "realtime"} {
+		# Determine our listening port
+		set peeringPort [dict get $::nano::node::configuration node peering_port]
+
+		# Start a UDP listening socket
+		foreach protocolVersion {v4 v6} {
+			if {[info exists ::nano::node::realtime::socket($protocolVersion)]} {
+				continue
+			}
+
+			set flags [list]
+			if {$protocolVersion eq "v6"} {
+				lappend flags ipv6
+			}
+
+			set protocolSocket [udp_open $peeringPort {*}$flags reuse]
+			set ::nano::node::realtime::socket($protocolVersion) $protocolSocket
+			fconfigure $protocolSocket -blocking false -encoding binary -translation binary
+			chan event $protocolSocket readable [list ::nano::node::realtime::incoming $protocolSocket]
+		}
+
+		# Used to just start listening
+		if {$address eq "" || $port eq ""} {
+			return
+		}
+
+		set protocolVersion "v[::ip::version $address]"
+		set socket $::nano::node::realtime::socket($protocolVersion)
+		set peerSock [list type "realtime" remote [list $address $port] socket $socket]
+	} elseif {$type eq "bootstrap"} {
+		set peerSock [::nano::network::_connect $address $port]
+	} else {
+		return -code error "Unknown network type: $type"
+	}
+
+	return $peerSock
+}
+
 proc ::nano::node::realtime::incoming {socket} {
 	set data [read $socket 8192]
 	if {$data eq ""} {
@@ -2509,14 +2940,17 @@ proc ::nano::node::realtime::incoming {socket} {
 	}
 
 	set remote [chan configure $socket -peer]
-	set response [::nano::network::server $data "realtime"]
+	set address [lindex $remote 0]
+	set port [lindex $remote 1]
+	set peerSock [::nano::node::socket realtime $address $port]
+	set response [::nano::network::server $data "realtime" $peerSock]
 	if {$response eq ""} {
 		return
 	}
 
-	# XXX:TODO: Send response
-	set peerSock [list type "realtime" remote $remote socket $socket]
-	#::nano::network::client $peerSock ...
+	set response [dict get $response "invoke_client"]
+
+	::nano::network::client $peerSock {*}$response
 
 	return
 }
@@ -2524,43 +2958,58 @@ proc ::nano::node::realtime::incoming {socket} {
 proc ::nano::node::realtime {} {
 	package require udp
 
-	set peeringPort [dict get $::nano::node::configuration node peering_port]
-	set clientID [dict get $::nano::node::configuration node client_id]
+	set clientIDPrivateKey [dict get $::nano::node::configuration node client_id_private_key]
 
-	# Start a UDP listening socket
-	set socket(v6) [udp_open $peeringPort ipv6 reuse]
-	set socket(v4) [udp_open $peeringPort reuse]
-	foreach {protocolVersion protocolSocket} [array get socket] {
-		fconfigure $protocolSocket -blocking false -encoding binary -translation binary
-		chan event $protocolSocket readable [list ::nano::node::realtime::incoming $protocolSocket]
-	}
+	# Start listening
+	::nano::node::socket realtime "" ""
 
 	# Periodically send keepalives to all known peers
-	## XXX:TODO: Limit this to only a few peers
 	while true {
-		foreach peerInfo [::nano::network::getPeers] {
+		set allPeers [::nano::node::getPeers]
+		set peers [lrange $allPeers 0 15]
+		set peerNotifyCount [expr {int(sqrt([llength $allPeers]))}]
+		if {$peerNotifyCount < 16} {
+			set peerNotifyCount 16
+		}
+		if {$peerNotifyCount > 128} {
+			set peerNotifyCount 128
+		}
+
+		foreach peerInfo [lrange $allPeers 0 $peerNotifyCount] {
 			set peerAddress [dict get $peerInfo "address"]
 			set peerPort [dict get $peerInfo "port"]
-			set protocolVersion "v[::ip::version $peerAddress]"
 
-			set peerSock [list type "realtime" remote [list $peerAddress $peerPort] socket $socket(${protocolVersion})]
+			set peerSock [::nano::node::socket realtime $peerAddress $peerPort]
 
-			::nano::network::client $peerSock "node_id_handshake" $clientID
-			::nano::network::client $peerSock "keepalive"
+			::nano::network::client $peerSock "keepalive" $peers -local true
 		}
 
 		::nano::node::_sleep [expr {1 * 60 * 1000}]
 	}
 }
 
-proc ::nano::node::start {} {
+proc ::nano::node::start args {
 	package require defer
 	package require udp
 
-	coroutine ::nano::node::bootstrap::run ::nano::node::bootstrap
-	coroutine ::nano::node::realtime::run ::nano::node::realtime
+	array set config {
+		-bootstrap true
+		-realtime true
+		-wait true
+	}
+	array set config $args
 
-	vwait ::nano::node::_FOREVER_
+	if {$config(-bootstrap)} {
+		coroutine ::nano::node::bootstrap::run ::nano::node::bootstrap
+	}
+
+	if {$config(-realtime)} {
+		coroutine ::nano::node::realtime::run ::nano::node::realtime
+	}
+
+	if {$config(-wait)} {
+		vwait ::nano::node::_FOREVER_
+	}
 }
 
 # RPC Client
