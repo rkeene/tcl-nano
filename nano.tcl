@@ -1742,9 +1742,17 @@ proc ::nano::node::_defaultConfig {basis network} {
 		"bootstrap_connections" "4" \
 	]
 
-	# XXX:TODO: Consider network
-	dict set default_node "peering_port" "7075"
-	dict set default_node "preconfigured_peers" [list "rai.raiblocks.net"]
+	# Configure based on network
+	switch -- $network {
+		"main" {
+			dict set default_node "peering_port" "7075"
+			dict set default_node "preconfigured_peers" [list "rai.raiblocks.net"]
+		}
+		"beta" {
+			dict set default_node "peering_port" "54000"
+			dict set default_node "preconfigured_peers" [list "rai-beta.raiblocks.net"]
+		}
+	}
 
 	catch {
 		set basis_node_database [dict create]
@@ -1783,6 +1791,8 @@ proc ::nano::node::_loadConfigFile {file network} {
 	set configuration [_defaultConfig $configuration $network]
 
 	set ::nano::node::configuration $configuration
+
+	dict set ::nano::node::configuration network $network
 
 	return $::nano::node::configuration
 }
@@ -1825,11 +1835,17 @@ proc ::nano::node::configure {network args} {
 	package require dns
 
 	# Set default options
-	## XXX:TODO: Handle other networks
-	if {$network ne "main"} {
-		return -code error "Only main network is supported right now"
+	switch -- $network {
+		"main" {
+			set info(-configDirectory) [file normalize ~/RaiBlocks]
+		}
+		"beta" {
+			set info(-configDirectory) [file normalize ~/RaiBlocksBeta]
+		}
+		default {
+			return -code error "Only main, and beta networks are supported right now"
+		}
 	}
-	set info(-configDirectory) [file normalize ~/RaiBlocks]
 
 	# Parse options to the configure
 	array set info $args
@@ -2092,7 +2108,9 @@ proc ::nano::protocol::create::node_id_handshake {types args} {
 	if {"query" in $types} {
 		::nano::protocol::extensions::set "node_id_handshake" extensions "query"
 
-		# XXX:TODO: Verify this is exactly a 32-byte nonce
+		if {[string length $argInfo(-query)] != 32} {
+			return -code error "Invalid input data"
+		}
 
 		append data $argInfo(-query)
 	}
@@ -2223,6 +2241,7 @@ proc ::nano::protocol::parse::confirm_req {extensions blockData} {
 	set blockTypeID [expr {($extensions >> 8) & 0x0f}]
 	set blockType [::nano::block::typeFromTypeID $blockTypeID]
 	set blockDict [::nano::block::dict::fromBlock $blockData -type=$blockType]
+	set blockHash [::nano::block::dict::toHash $blockDict -hex]
 
 	# XXX:TEMPORARY
 	dict unset blockDict _blockData
@@ -2230,6 +2249,7 @@ proc ::nano::protocol::parse::confirm_req {extensions blockData} {
 
 	set retval(blockType) $blockType
 	set retval(block) $blockDict
+	set retval(hash) $blockHash
 
 	return [array get retval]
 }
@@ -2320,7 +2340,7 @@ proc ::nano::protocol::parse::confirm_ack {extensions blockData} {
 	return [array get retval]
 }
 
-proc ::nano::protocol::create {messageType args} {
+proc ::nano::protocol::create {network messageType args} {
 	set versionUsing 14
 	set versionMin 13
 	set versionMax $versionUsing
@@ -2337,8 +2357,17 @@ proc ::nano::protocol::create {messageType args} {
 
 	set messageInfo(extensions) [expr {$messageInfo(extensions) | (($messageInfo(blockType) << 8) & 0x0f00)}]
 
+	switch -- $network {
+		"main" {
+			set packetMagic "RC"
+		}
+		"beta" {
+			set packetMagic "RB"
+		}
+	}
+
 	set message [binary format a2ccccs \
-		RC \
+		$packetMagic \
 		$versionMax \
 		$versionUsing \
 		$versionMin \
@@ -2353,7 +2382,9 @@ proc ::nano::protocol::create {messageType args} {
 
 
 proc ::nano::network::client {sock messageType args} {
-	set message [::nano::protocol::create $messageType {*}$args]
+	set configuredNetwork [dict get $::nano::node::configuration network]
+
+	set message [::nano::protocol::create $configuredNetwork $messageType {*}$args]
 
 	::nano::node::log "Sending message [binary encode hex $message] ([::nano::protocol::parse $message]) to socket $sock"
 
@@ -2852,6 +2883,9 @@ proc ::nano::protocol::parse {message} {
 		"RC" {
 			set result(network) "main"
 		}
+		"RB" {
+			set result(network) "beta"
+		}
 		default {
 			return ""
 		}
@@ -2877,6 +2911,11 @@ proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
 	::nano::node::log "*** Incoming: $messageType ($messageTypeID on $networkType; from $peerSock) [binary encode hex $message] ($messageData)"
 
 	if {![info exists messageDict]} {
+		return ""
+	}
+
+	set configuredNetwork [dict get $::nano::node::configuration network]
+	if {$network ne $configuredNetwork} {
 		return ""
 	}
 
@@ -2967,21 +3006,34 @@ proc ::nano::node::realtime {} {
 	while true {
 		set allPeers [::nano::node::getPeers]
 		set peers [lrange $allPeers 0 15]
-		set peerNotifyCount [expr {int(sqrt([llength $allPeers]))}]
-		if {$peerNotifyCount < 16} {
-			set peerNotifyCount 16
-		}
-		if {$peerNotifyCount > 128} {
-			set peerNotifyCount 128
+
+		# XXX:TODO: Make this a configuration option
+		set superPeer true
+
+		if {$superPeer} {
+			set contactPeers $allPeers
+		} else {
+			set peerNotifyCount [expr {int(sqrt([llength $allPeers]))}]
+			if {$peerNotifyCount < 16} {
+				set peerNotifyCount 16
+			}
+			if {$peerNotifyCount > 128} {
+				set peerNotifyCount 128
+			}
+
+			set contactPeers [lrange $allPeers 0 $peerNotifyCount]
 		}
 
-		foreach peerInfo [lrange $allPeers 0 $peerNotifyCount] {
+		foreach peerInfo $contactPeers {
 			set peerAddress [dict get $peerInfo "address"]
 			set peerPort [dict get $peerInfo "port"]
 
 			set peerSock [::nano::node::socket realtime $peerAddress $peerPort]
 
-			::nano::network::client $peerSock "keepalive" $peers -local true
+			set node_id_nonce [::nano::internal::randomBytes 32]
+
+			::nano::network::client $peerSock keepalive $peers -local true
+			::nano::network::client $peerSock node_id_handshake query -query $node_id_nonce
 		}
 
 		::nano::node::_sleep [expr {1 * 60 * 1000}]
