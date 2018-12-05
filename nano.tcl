@@ -22,6 +22,7 @@ namespace eval ::nano::rpc::client {}
 namespace eval ::nano::balance {}
 namespace eval ::nano::node::bootstrap {}
 namespace eval ::nano::node::realtime {}
+namespace eval ::nano::node::cli {}
 namespace eval ::nano::network::client {}
 namespace eval ::nano::network::server {}
 namespace eval ::nano::protocol::create {}
@@ -1866,8 +1867,11 @@ proc ::nano::node::configure {network args} {
 #	::nano::node::setLedgerHandle $dbHandle
 }
 
-proc ::nano::node::user_log {line} {
-	puts stderr $line
+# Only replace this function if it doesn't already exist
+if {[info command ::nano::node::user_log] eq ""} {
+	proc ::nano::node::user_log {line} {
+		puts stderr $line
+	}
 }
 
 proc ::nano::node::log {message {level "debug"}} {
@@ -2653,21 +2657,6 @@ proc ::nano::node::getPeers {} {
 	}
 
 	set now [clock seconds]
-	foreach {peerKeyInfo peerInfo} [array get ::nano::node::peers] {
-		set lastSeen [dict get $peerInfo "lastSeen"]
-		set address [dict get $peerKeyInfo "address"]
-		set peerPort [dict get $peerKeyInfo "port"]
-		set peerKey [dict create address $peer port $peerPort]
-
-		if {($now - $lastSeen) > (5 * 60)} {
-			unset -nocomplain ::nano::node::peers($peerKeyInfo)
-			unset -nocomplain ::nano::node::_node_id_nonces($peerKey)
-			continue
-		}
-
-		lappend completePeers $peerKey
-	}
-
 	# Cleanup nonces while we are here
 	foreach {peerKey peerInfo} [array get ::nano::node::_node_id_nonces] {
 		set lastSeen [dict get $peerInfo "lastSeen"]
@@ -2676,11 +2665,24 @@ proc ::nano::node::getPeers {} {
 		}
 	}
 
-	set completePeers [::nano::node::_randomSortList -unique $completePeers]
-	set retval [list]
-	foreach peer $completePeers {
-		lappend retval $peer
+	# Come up with a list of peers that we have seen recently
+	foreach {peerKeyInfo peerInfo} [array get ::nano::node::peers] {
+		set lastSeen [dict get $peerInfo "lastSeen"]
+		set address [dict get $peerKeyInfo "address"]
+		set peerPort [dict get $peerKeyInfo "port"]
+		set peerKey [dict create address $address port $peerPort]
+
+		if {($now - $lastSeen) > (5 * 60)} {
+#puts "Have not seen $peerKey in a while, dropping (now=$now, lastSeen=$lastSeen)"
+			unset -nocomplain ::nano::node::peers($peerKeyInfo)
+			unset -nocomplain ::nano::node::_node_id_nonces($peerKey)
+			continue
+		}
+
+		lappend completePeers $peerKey
 	}
+
+	set retval [::nano::node::_randomSortList -unique $completePeers]
 
 	return $retval
 }
@@ -2733,11 +2735,14 @@ proc ::nano::network::server::keepalive {messageDict} {
 
 		# If this peer is not already known, contact them requesting a handshake
 		if {![info exists ::nano::node::peers($peer)]} {
-			set node_id_nonce [::nano::internal::randomBytes 32]
-			set ::nano::node::_node_id_nonces($peer) [dict create query $node_id_nonce lastSeen $now]
+			if {![info exists ::nano::node::_node_id_nonces($peer)]} {
+				set node_id_nonce [::nano::internal::randomBytes 32]
+				set ::nano::node::_node_id_nonces($peer) [dict create query $node_id_nonce lastSeen $now]
 
-			set peerSock [::nano::node::socket realtime $address $port]
-			::nano::network::client $peerSock "node_id_handshake" query -query $node_id_nonce
+				set peerSock [::nano::node::socket realtime $address $port]
+#puts "Querying $peerSock with node_id_handshake (1)"
+				::nano::network::client $peerSock "node_id_handshake" query -query $node_id_nonce
+			}
 		}
 	}
 
@@ -2783,6 +2788,7 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		unset ::nano::node::_node_id_nonces($peer)
 
 		# Add the peer to our list of peers
+#puts "Got node_id_handshake response from $peer"
 		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
 	}
 
@@ -2839,6 +2845,7 @@ proc ::nano::protocol::parse::publish {extensions messageData} {
 	set blockTypeID [expr {($extensions >> 8) & 0x0f}]
 	set blockType [::nano::block::typeFromTypeID $blockTypeID]
 	set blockDict [::nano::block::dict::fromBlock $messageData -type=$blockType]
+	set blockHash [::nano::block::dict::toHash $blockDict -hex]
 
 	# XXX:TEMPORARY
 	dict unset blockDict _blockData
@@ -2846,6 +2853,7 @@ proc ::nano::protocol::parse::publish {extensions messageData} {
 
 	set retval(blockType) $blockType
 	set retval(block) $blockDict
+	set retval(hash) $blockHash
 
 	return [array get retval]
 }
@@ -2907,6 +2915,12 @@ proc ::nano::protocol::parse {message} {
 proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
 	set messageData [::nano::protocol::parse $message]
 	dict with messageData {}
+
+	if {![info exists messageTypeID]} {
+		::nano::node::log "*** Incoming: INVALID [binary encode hex $message] ($messageData)"
+
+		return ""
+	}
 
 	::nano::node::log "*** Incoming: $messageType ($messageTypeID on $networkType; from $peerSock) [binary encode hex $message] ($messageData)"
 
@@ -3033,6 +3047,7 @@ proc ::nano::node::realtime {} {
 			set node_id_nonce [::nano::internal::randomBytes 32]
 
 			::nano::network::client $peerSock keepalive $peers -local true
+#puts "Querying $peerSock with node_id_handshake (2)"
 			::nano::network::client $peerSock node_id_handshake query -query $node_id_nonce
 		}
 
@@ -3043,6 +3058,9 @@ proc ::nano::node::realtime {} {
 proc ::nano::node::start args {
 	package require defer
 	package require udp
+
+	set ::nano::node::startTime [clock seconds]
+	set ::nano::node::statsStartTime [clock seconds]
 
 	array set config {
 		-bootstrap true
@@ -3199,4 +3217,200 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	set result [list $balance $baseUnit]
 
 	return $result
+}
+
+proc ::nano::node::cli args {
+	switch -exact -- [lindex $args 0] {
+		"-interactive" {
+			set ::nano::node::cli::_using_repl true
+
+			::nano::node::cli -import
+
+			set use_tclreadline false
+			catch {
+				package require tclreadline
+				set use_tclreadline true
+			}
+
+			if {$use_tclreadline} {
+				proc ::tclreadline::prompt1 {} {
+					return "\[[dict get $::nano::node::configuration network]\] nano-node [package present nano]> "
+				}
+				::tclreadline::Loop
+			} else {
+				fconfigure stdout -blocking false
+				puts -nonewline "> "
+				flush stdout
+				fileevent stdin readable [list apply {{} {
+					uplevel #0 {
+						gets stdin __line__
+						if {$__line__ eq "" && [eof stdin]} {
+							exit 0
+						}
+
+						if {[catch $__line__ __result__]} {
+							puts "\[ERROR\] $::errorInfo"
+						} else {
+							if {$__result__ ne ""} {
+								puts "$__result__"
+							}
+						}
+					}
+
+					puts -nonewline "> "
+					flush stdout
+				}}]
+
+				vwait forever
+			}
+		}
+		"-import" {
+			uplevel #0 {
+				namespace import ::nano::node::cli::*
+			}
+		}
+		default {
+			error "Not implemented"
+		}
+	}
+
+}
+
+proc ::nano::node::cli::_interval {interval} {
+	set response [list]
+	foreach {divisor unit} {60 seconds 60 minutes 24 hours 36527 days 1 century} {
+		set amount [expr {$interval % $divisor}]
+		if {$amount > 0} {
+			if {$amount == 1} {
+				set unit [string range $unit 0 end-1]
+			}
+
+			lappend response $unit $amount
+		}
+		set interval [expr {$interval / $divisor}]
+	}
+
+	return "[lreverse $response]"
+}
+
+proc ::nano::node::cli::uptime {} {
+	set now [clock seconds]
+	set start $::nano::node::startTime
+	set statsStart $::nano::node::statsStartTime
+
+	set uptime [expr {$now - $start}]
+	set uptimeStats [expr {$now - $statsStart}]
+
+	set format {%-19s: %s}
+	lappend response [format $format Uptime [_interval $uptime]]
+	lappend response [format $format "Stats last cleared" "[_interval $uptimeStats] ago"]
+
+	return [join $response "\n"]
+}
+
+proc ::nano::node::cli::stats args {
+	if {[lindex $args 0] eq "-clear"} {
+		set ::nano::node::statsStartTime [clock seconds]
+
+		unset -nocomplain ::nano::node::stats
+		unset -nocomplain ::nano::node::_stats_seen_hashes
+		unset -nocomplain ::nano::node::_stats_seen_hashes_by_rep
+
+		return
+	}
+
+	set globalOnly false
+	if {[lindex $args 0] eq "-global"} {
+		set globalOnly true
+	}
+
+	set maxKeyLen 0
+	foreach {key val} [array get ::nano::node::stats] {
+		if {$globalOnly} {
+			if {[lindex $key 1] eq "rep"} {
+				continue
+			}
+		}
+
+		set keyLen [string length $key]
+		if {$keyLen > $maxKeyLen} {
+			set maxKeyLen $keyLen
+		}
+
+		set localStats($key) $val
+	}
+
+	foreach {key val} [lsort -stride 2 -dictionary [array get localStats]] {
+		puts [format "%-${maxKeyLen}s = $val" $key $val]
+	}
+
+	return
+}
+
+proc ::nano::node::cli::version {} {
+	return [package present nano]
+}
+
+proc ::nano::node::cli::help args {
+	set response [list]
+	if {[llength $args] == 0} {
+		lappend response "Commands:"
+
+		foreach command [lsort -dictionary [info command ::nano::node::cli::*]] {
+			set command [namespace tail $command]
+			set description ""
+			lappend response [format "   %-12s - %s" $command $description]
+		}
+	}
+
+	return [join $response "\n"]
+}
+
+proc ::nano::node::cli::peers args {
+	if {[lindex $args 0] eq "-count"} {
+		return [llength [::nano::node::getPeers]]
+	}
+
+	if {[llength $args] == 1} {
+		set glob [lindex $args 0]
+		if {[string index $glob 0] eq "!"} {
+			set globInvert true
+			set glob [string range $glob 1 end]
+		} else {
+			set globInvert false
+		}
+	}
+
+	lappend response "Peers:"
+
+	set now [clock seconds]
+	foreach peer [::nano::node::getPeers] {
+		if {[info exists glob]} {
+			if {![string match $glob $peer] == !$globInvert} {
+				continue
+			}
+		}
+
+		if {[info exists ::nano::node::peers($peer)]} {
+			set peerInfo $::nano::node::peers($peer)
+			set lastSeen [dict get $peerInfo lastSeen]
+
+			set delta [expr {$now - $lastSeen}]
+
+			set age "last seen $delta seconds ago"
+		} else {
+			set age "statically configured peer"
+		}
+
+		lappend response "  $peer: $age"
+	}
+	return [join $response "\n"]
+}
+
+namespace eval ::nano::node::cli {
+	namespace export -clear *
+}
+
+if {[info exists ::nano::node::cli::_using_repl]} {
+	::nano::node::cli -import
 }
