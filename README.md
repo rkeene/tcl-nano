@@ -26,3 +26,18 @@ Tcl Nano depends on few other packages:
    - The [Tcl interpreter](https://www.tcl-lang.org/)
    - The Tcl package [json](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/json&type=tree)
    - The Tcl package [json::write](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/json&type=tree)
+
+The following optional dependencies should also be available (some features may not be
+available without these packages):
+   - The Tcl package [ip](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/dns&type=tree)
+   - The Tcl package [dns](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/dns&type=tree)
+   - The Tcl package [defer](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/defer&type=tree)
+   - The Tcl package [lmdb](https://github.com/ray2501/tcl-lmdb)
+   - The Tcl package [udp](http://tcludp.sourceforge.net/)
+   - The Tcl package [tclreadline](http://tclreadline.sourceforge.net/)
+
+On a Debian system you should be able to do the following:
+
+```
+$ sudo apt install -y tcl86 tcllib tcl-udp tcl-tclreadline
+```
