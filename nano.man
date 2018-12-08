@@ -408,22 +408,31 @@ allbox tab(:);
 cb cb cb cb cb
 c l l l c.
 messageType:Name:On Bootstrap:On Realtime:Version
-0x00:Invalid:Yes:Yes:0+
-0x01:Not_A_Type:?:?:0+
-0x02:Keepalive:No:Yes:0+
-0x03:Publish:No:Yes:0+
-0x04:Confirm_Req:No:Yes:0+
-0x05:Confirm_Ack:No:Yes:0+
-0x06:Bulk_Pull:Yes:No:?
-0x07:Bulk_Push:Yes:No:?
-0x08:Frontier_Req:Yes:No:?
-0x09:Bulk_Pull_Blocks:Yes:No:11+
+0x00:Invalid:Yes:Yes:1+
+0x01:Not_A_Type:Yes:Yes:1+
+0x02:Keepalive:No:Yes:1+
+0x03:Publish:No:Yes:1+
+0x04:Confirm_Req:No:Yes:1+
+0x05:Confirm_Ack:No:Yes:1+
+0x06:Bulk_Pull:Yes:No:1+
+0x07:Bulk_Push:Yes:No:1+
+0x08:Frontier_Req:Yes:No:1+
+0x09:Bulk_Pull_Blocks:Yes:No:Deprecated
 0x0A:Node_ID_Handshake:Yes:No:12+
 0x0B:Bulk_Pull_Account:Yes:No:12+
 .TE
 
-.B "TODO: Extensions"
+.TP
+.B Extensions
+The following message types have extension bits used as flags:
+.IR Node_ID_Handshake ", " Bulk_Pull .
 
+The following message types encode a block type in the extension bits:
+.IR Publish ", " Confirm_Req ", and " Confirm_Ack .
+The block type is encoded in the lower 4 bits of the first byte of the
+extensions field (i.e., (extensions & 0x0f00 >> 8)).
+
+.SS Payload
 Following the message header comes the payload for the particular message
 type.
 
@@ -437,7 +446,9 @@ TODOC
 
 .TP
 .B Keepalive
-The Keepalive message serves as an introduction and beaconing mechanism for
+The
+.I Keepalive
+message serves as an introduction and beaconing mechanism for
 the Nano real-time network.
 The Keepalive message requires exactly 8 IPv6 address and port number
 tuples to be sent as its payload.  The IPv6 addresses are each 128-bits
@@ -446,15 +457,41 @@ byte order.  The payload for the Keepalive message type is 144 bytes in size.
 
 .TP
 .B Publish
-TODOC
+The
+.I Publish
+message serves as a mechanism to introduce new blocks into the
+Nano real-time network.  The block type is encoded in the
+.I Extensions
+field as described above.  The payload is the contents of the block.
 
 .TP
 .B Confirm_Req
-TODOC
+The
+.I Confirm_Req
+message requests that all online representatives "vote" on a block.
+The block type is encoded in the
+.I Extensions
+field as described above.  The payload is the contents of the block
+to be voted on.
 
 .TP
 .B Confirm_Ack
-TODOC
+The
+.I Confirm_Ack
+message is sent in response to either a new block being observed
+by a representative or in response to an explicit
+.IR Confirm_Req .
+The block type is encoded in the
+.I Extensions
+field as described above.
+If the block type is specified as
+.I Not_A_Block
+then the payload is a sequence of hashes.  Due to IPv4 fragment
+size limits this typically does not exceed 12 hashes.  If the
+block type is something other than
+.I Not_A_Block
+then the payload is the contents of the block that is being
+voted on.
 
 .TP
 .B Bulk_Pull
