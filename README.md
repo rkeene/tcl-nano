@@ -29,6 +29,7 @@ Tcl Nano depends on few other packages:
 
 The following optional dependencies should also be available (some features may not be
 available without these packages):
+
    - The Tcl package [ip](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/dns&type=tree)
    - The Tcl package [dns](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/dns&type=tree)
    - The Tcl package [defer](https://core.tcl.tk/tcllib/dir?ci=trunk&name=modules/defer&type=tree)
