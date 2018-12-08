@@ -496,11 +496,25 @@ voted on.
 .TP
 .B Bulk_Pull
 The Bulk_Pull message is used to pull the entire chain for an account, down to
-its beginning or to a given block.  It takes 2 arguments, both of them 256-bit.
-The first argument is the account, so its 256-bit public key should be encoded
-as binary in big-endian notation.  The second argument is the block hash to
-stop sending at, or 256 bits of 0s to indicate that the entire chain should be
-sent.  The payload for Bulk_Pull messages is 64 bytes in size.
+its beginning or to a given block.  It takes 2 or 3 arguments.  The first two
+arguments are  256-bits each.  The first argument is the account, so its
+256-bit public key should be encoded as binary in big-endian notation.  The
+second argument is the block hash to stop sending at, or 256 bits of 0s to
+indicate that the entire chain should be sent.  If the
+.I Extensions
+field has the lowest bit set
+.RI ( Count_Present )
+then an additional 8 bytes of data are present in the payload.  The first byte
+of these 8 bytes must be 0, followed by a 4 byte (32-bit) unsigned integer in
+little endian format that contains the maximum number of records to return.  The
+remaining 3 bytes in the payload are reserved at this time.
+The payload for
+.I Bulk_Pull
+messages is 64 bytes (if the 
+.I Count_Present
+flag is not set) or 72 bytes (if the
+.I Count_Present
+flag is set) in size.
 
 The response from a Bulk_Pull request will be a stream of tuples, each
 containing a 8-bit block type identifier, and a block message.  When no more
@@ -508,6 +522,7 @@ blocks are available the response is terminated by sending the block type
 identifier for
 .I not_a_block
 and no block message follows.
+
 
 .TP
 .B Bulk_Push
@@ -535,7 +550,7 @@ account's blockchain from the node where the response was generated.
 
 .TP
 .B Bulk_Pull_Blocks
-TODOC
+Deprecated.  Do not use.
 
 .TP
 .B Node_ID_Handshake
@@ -543,7 +558,12 @@ TODOC
 
 .TP
 .B Bulk_Pull_Account
-TODOC
+The
+.I Bulk_Pull_Account
+message is used to pull information regarding an account, such as its
+frontier, current balance, and any blocks that are pending for that account.
+It requires 3 arguments:  The 256-bit account public key, a 128-bit minimum
+amount to for which to return pending blocks for, and an 8 bit flags.
 
 .SH PROCEDURES
 .SS Addresses
