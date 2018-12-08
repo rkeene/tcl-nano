@@ -31,6 +31,22 @@ namespace eval ::nano::protocol::extensions {}
 namespace eval ::nano::network::_dns {}
 
 # Constants
+set ::nano::block::genesis(main) {{
+	"type": "open",
+	"source": "E89208DD038FBB269987689621D52292AE9C35941A7484756ECCED92A65093BA",
+	"representative": "xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3",
+	"account": "xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3",
+	"work": "62f05417dd3fb691",
+	"signature": "9F0C933C8ADE004D808EA1985FA746A7E95BA2A38F867640F53EC8F180BDFE9E2C1268DEAD7C2664F356E37ABA362BC58E46DBA03E523A7B5A19E4B6EB12BB02"
+}}
+set ::nano::block::genesis(beta) {{
+	"type": "open",
+	"source": "A59A47CC4F593E75AE9AD653FDA9358E2F7898D9ACC8C60E80D0495CE20FBA9F",
+	"representative": "xrb_3betaz86ypbygpqbookmzpnmd5jhh4efmd8arr9a3n4bdmj1zgnzad7xpmfp",
+	"account": "xrb_3betaz86ypbygpqbookmzpnmd5jhh4efmd8arr9a3n4bdmj1zgnzad7xpmfp",
+	"work": "000000000f0aaeeb",
+	"signature": "A726490E3325E4FA59C1C900D5B6EEBB15FE13D99F49D475B93F0AACC5635929A0614CF3892764A04D1C6732A0D716FFEB254D4154C6F544D11E6630F201450B"
+}}
 set ::nano::block::stateBlockPreamble [binary decode hex "0000000000000000000000000000000000000000000000000000000000000006"]
 set ::nano::block::zero "0000000000000000000000000000000000000000000000000000000000000000"
 set ::nano::balance::zero "00000000000000000000000000000000"
@@ -82,6 +98,9 @@ set ::nano::protocol::extensions {
 	node_id_handshake {
 		query 1
 		response 2
+	}
+	bulk_pull {
+		count_present 1
 	}
 }
 
@@ -1078,6 +1097,18 @@ proc ::nano::block::json::filter {blockJSON} {
 	return $blockJSON
 }
 
+proc ::nano::block::json::genesis {network} {
+	return $::nano::block::genesis($network)
+}
+
+proc ::nano::block::dict::genesis {network} {
+	if {![info exists ::nano::block::dict::genesis($network)]} {
+		set ::nano::block::dict::genesis($network) [::nano::block::dict::fromJSON [::nano::block::json::genesis $network]]
+	}
+
+	return $::nano::block::dict::genesis($network)
+}
+
 #   send from <account> to <account> previousBalance <balance>
 #        amount <amount> sourceBlock <sourceBlockHash>
 #        previous <previousBlockHash> ?representative <representative>?
@@ -1692,9 +1723,12 @@ proc ::nano::ledger::lmdb::addPending {lmdbInfo account blockHash args} {
 }
 
 # Node Configuration
-proc ::nano::node::_configDictToJSON {configDict {prefix ""}} {
+proc ::nano::node::_configDictToJSON {configDict {prefix ""} {keyPattern ""}} {
+	if {$keyPattern eq ""} {
+		set keyPattern "*"
+	}
 	set values [list]
-	foreach key [dict keys $configDict] {
+	foreach key [dict keys $configDict $keyPattern] {
 		set value [dict get $configDict $key]
 		switch -- ${prefix}${key} {
 			"rpc" - "node" - "opencl" - "node/logging" - "node/database" {
@@ -1906,10 +1940,35 @@ proc ::nano::protocol::extensions::unset {messageType extensionsVar flag} {
 }
 
 
-proc ::nano::protocol::create::bulk_pull {account {end ""}} {
-	set accountPubKey [::nano::address::toPublicKey $account -binary]
+proc ::nano::protocol::create::bulk_pull {account args} {
+	set count 0
+	set extensions 0
+	foreach {arg argVal} $args {
+		switch -exact -- $arg {
+			"-end" {
+				set end $argVal
+			}
+			"-count" {
+				set count $argVal
+			}
+			"-partialOkay" - "-foreach" {
+				# Ignored, used by response parser
+			}
+			default {
+				error "Invalid option: $arg"
+			}
+		}
+	}
 
-	if {$end ne ""} {
+	if {[string length $account] in {64 65} && [lindex [split $account _] 0] in {xrb nano}} {
+		set accountPubKey [::nano::address::toPublicKey $account -binary]
+	} elseif {[string length $account] != $::nano::key::publicKeyLength} {
+		set accountPubKey [binary decode hex $account]
+	} else {
+		set accountPubKey $account
+	}
+
+	if {[info exists end]} {
 		if {[string length $end] != $::nano::block::hashLength} {
 			set end [binary decode hex $end]
 		}
@@ -1917,10 +1976,121 @@ proc ::nano::protocol::create::bulk_pull {account {end ""}} {
 		set end [binary decode hex $::nano::block::zero]
 	}
 
-	return [dict create data [binary format a32a32 \
+	set request [binary format a32a32 \
 		$accountPubKey \
 		$end \
-	]]
+	]
+
+	if {$count != 0} {
+		::nano::protocol::extensions::set "bulk_pull" extensions "count_present"
+		append request [binary format ciccc 0 $count 0 0 0]
+	} else {
+		::nano::protocol::extensions::unset "bulk_pull" extensions "count_present"
+	}
+
+	return [dict create extensions $extensions data $request]
+}
+
+proc ::nano::protocol::parse::bulk_pull_response {sock account args} {
+	set partialOkay false
+	foreach {arg argVal} $args {
+		switch -exact -- $arg {
+			"-end" {
+				# Ignored, used by request creator
+			}
+			"-partialOkay" {
+				set partialOkay $argVal
+			}
+			"-foreach" {
+				set blockVar [lindex $argVal 0]
+				set blockHandler [lindex $argVal 1]
+			}
+		}
+	}
+
+	set blocks [list]
+
+	set success false
+
+	while true {
+		if {[catch {
+			set type [::nano::network::_recv $sock 1]
+		} err]} {
+			::nano::node::log "Error from $sock: $err"
+			break
+		}
+
+		set type [::nano::block::typeFromTypeID $type -binary]
+
+		if {$type eq "not_a_block"} {
+			if {[info exists blockHandler]} {
+				uplevel 2 [list set $blockVar ""]
+				catch [list uplevel 2 $blockHandler]
+			}
+
+			set success true
+
+			break
+		}
+
+		set length [::nano::block::lengthFromType $type -work -signature]
+
+		if {[catch {
+			set block [::nano::network::_recv $sock $length]
+		} err]} {
+			::nano::node::log "Error from $sock: $err"
+			break
+		}
+
+		set block [::nano::block::dict::fromBlock $block -type=$type]
+
+		if {[info exists blockHandler]} {
+			uplevel 2 [list set $blockVar $block]
+			set blockHandlerCode [catch [list uplevel 2 $blockHandler] blockHandlerResult blockHandlerOptions]
+			switch -exact -- $blockHandlerCode {
+				0 {}
+				1 { return {*}$blockHandlerOptions $blockHandlerResult }
+				2 { error "Not implemented" }
+				3 {
+					set success true
+
+					break
+				}
+				4 { continue }
+			}
+		} else {
+			lappend blocks $block
+		}
+	}
+
+	if {!$success} {
+		if {!$partialOkay} {
+			error "Failed to pull from $sock"
+		} elseif {[info exists blockHandler]} {
+			uplevel 2 [list set $blockVar "error"]
+			catch [list uplevel 2 $blockHandler]
+		}
+	}
+
+	return $blocks
+}
+
+proc ::nano::protocol::parse::bulk_pull {extensions messageData} {
+	set flags [::nano::protocol::extensions::get "bulk_pull" $extensions]
+
+	binary scan $messageData H64H64a* start end extra
+	set retval [dict create start $start]
+
+	if {$end ni $::nano::block::zero} {
+		dict set retval end $end
+	}
+
+	if {"count_present" in $flags} {
+		binary scan $extra cuic* _ count _
+		dict set retval count $count
+	}
+
+	return $retval
 }
 
 proc ::nano::protocol::create::_bulk_pull_account_flagsParse {direction flag} {
@@ -2417,6 +2587,255 @@ proc ::nano::network::client {sock messageType args} {
 	return $response
 }
 
+proc ::nano::node::bootstrap::TMP_LEDGER_ADDBLOCK {block} {
+	set blockHash [::nano::block::dict::toHash $block -binary]
+	set ::nano::node::bootstrap::TMP_LEDGER($blockHash) 1
+}
+
+proc ::nano::node::bootstrap::TMP_LEDGER_ADDBLOCKHASH {blockHash} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	set ::nano::node::bootstrap::TMP_LEDGER($blockHash) 1
+}
+
+proc ::nano::node::bootstrap::TMP_LEDGER_CHECKBLOCKHASH {blockHash} {
+	if {[string length $blockHash] != $::nano::block::hashLength} {
+		set blockHash [binary decode hex $blockHash]
+	}
+
+	if {[info exists ::nano::node::bootstrap::TMP_LEDGER($blockHash)]} {
+		return true
+	}
+
+	return false
+}
+
+proc ::nano::node::bootstrap::TMP_LEDGER_BLOCKHASHCOUNT {} {
+	return [llength [array names ::nano::node::bootstrap::TMP_LEDGER]]
+}
+
+proc ::nano::node::bootstrap::lazy_peer {peerAddress peerPort} {
+	incr ::nano::node::bootstrap::lazyPeerCount
+
+	set peerString "$peerAddress $peerPort"
+
+	set firstTime true
+	while {[llength [array names ::nano::node::bootstrap::lazy_pullQueue]] != 0} {
+		if {!$firstTime && ![info exists peerSock]} {
+			incr ::nano::node::bootstrap::lazyPeerCount -1
+
+			return
+		}
+
+		set blockHash [lindex [array names ::nano::node::bootstrap::lazy_pullQueue] 0]
+		set blockHashString [string toupper [binary encode hex $blockHash]]
+
+		if {[::nano::node::bootstrap::TMP_LEDGER_CHECKBLOCKHASH $blockHash]} {
+			unset -nocomplain ::nano::node::bootstrap::lazy_pullQueue($blockHash)
+			::nano::node::log "Skipping $blockHashString (already in local ledger -- this is okay, it just means we queued something but by the time it was acted on it was already fetched, so no work is needed)"
+
+			# Avoid getting busy in this loop and monopolizing the thread
+			# by yielding temporarily
+			::nano::node::_sleep 0
+
+			continue
+		}
+
+		if {$firstTime} {
+			set firstTime false
+
+			::nano::node::log "Connecting to $peerString"
+
+			if {[catch {
+				set peerSock [::nano::node::createSocket bootstrap $peerAddress $peerPort]
+			}]} {
+				::nano::node::log "Failed to connect to $peerString"
+
+				incr ::nano::node::bootstrap::lazyPeerCount -1
+
+				return
+			}
+		}
+
+		::nano::node::log "Pulling $blockHashString from $peerString"
+
+		unset -nocomplain chainAccount chainFrontier block
+		set origBlockHash $blockHash
+		set lastBlock ""
+		set failedToDownload false
+
+		if {[catch {
+			set chainReachedEnd false
+			::nano::network::client $peerSock bulk_pull $blockHash -count 128 -foreach {prevBlock {
+				set isFinalBlock false
+				if {$prevBlock eq ""} {
+					set isFinalBlock true
+				}
+
+				# We don't start processing blocks until after we have pulled the second block
+				# so that we have access to the next block in the download (which is the
+				# previous block in the chain) to verify balance changes for state blocks
+				set block $lastBlock
+				set lastBlock $prevBlock
+				if {$block eq ""} {
+					continue
+				}
+
+				set blockType [dict get $block type]
+				set blockHash [::nano::block::dict::toHash $block -binary]
+				set blockHashString [string toupper [binary encode hex $blockHash]]
+
+				# Remove this block from the pull queue
+				unset -nocomplain ::nano::node::bootstrap::lazy_pullQueue($blockHash)
+
+				# Get the frontier and account for this chain
+				if {![info exists chainFrontier]} {
+					set chainFrontier $blockHash
+				}
+
+				if {![info exists chainAccount]} {
+					if {[dict exists $block "account"]} {
+						set chainAccount [dict get $block "account"]
+						set seenFrontiers($chainAccount) $chainFrontier
+					}
+				}
+
+				# Determine if this block is a receiving block
+				unset -nocomplain isReceive link
+				if {$blockType in {open receive}} {
+					set isReceive true
+				}
+
+				if {$blockType in {send change}} {
+					set isReceive false
+				}
+
+				if {![info exists isReceive]} {
+					if {$prevBlock eq ""} {
+						if {$blockType eq "state"} {
+							if {[dict get $block previous] eq $::nano::block::zero} {
+								set isReceive true
+							} else {
+								set ::nano::node::bootstrap::lazy_pullQueue([binary decode hex [dict get $block previous]]) true
+							}
+						} else {
+							error "Something is wrong.  There is no following block to this $blockType block"
+						}
+					}
+				}
+
+				if {![info exists isReceive]} {
+					catch {
+						if {[dict get $block balance] > [dict get $prevBlock balance]} {
+							set isReceive true
+						}
+					}
+				}
+
+				if {![info exists isReceive]} {
+					set isReceive false
+				}
+
+				# If so, find the source block hash
+				if {$isReceive} {
+					switch -- $blockType {
+						"state" {
+							set link [dict get $block link]
+						}
+						"open" - "receive" {
+							set link [dict get $block source]
+						}
+						default {
+							error "Unable to handle receiving from block type $blockType"
+						}
+					}
+
+					set link [string toupper $link]
+				}
+
+				# Determine if this block is an open block
+				set isOpen false
+				if {$blockType eq "open"} {
+					set isOpen true
+				} elseif {$blockType eq "state" && [dict get $block previous] eq $::nano::block::zero} {
+					set isOpen true
+				}
+
+				# If we reached the open block, declare victory
+				if {$isOpen} {
+					set chainReachedEnd true
+				}
+
+				# Determine if we already have this block
+				set alreadyPulledLink false
+
+				if {[::nano::node::bootstrap::TMP_LEDGER_CHECKBLOCKHASH $blockHash]} {
+					set alreadyPulledThisBlock true
+				} else {
+					set alreadyPulledThisBlock false
+
+					if {$isReceive && [::nano::node::bootstrap::TMP_LEDGER_CHECKBLOCKHASH $link]} {
+						set alreadyPulledLink true
+					}
+				}
+
+				::nano::node::bootstrap::TMP_LEDGER_ADDBLOCK $block
+
+				set skippingText ""
+				if {$alreadyPulledLink} {
+					set skippingText " (skipped adding link)"
+				}
+
+				if {$alreadyPulledThisBlock} {
+					set skippingText " (already have this block, thus the rest of this chain)"
+				}
+
+				if {$isReceive} {
+					::nano::node::log "Pull got $blockHashString ($blockType) <- $link${skippingText}"
+
+					if {!$alreadyPulledThisBlock && !$alreadyPulledLink} {
+						set ::nano::node::bootstrap::lazy_pullQueue([binary decode hex $link]) true
+					}
+				} else {
+					::nano::node::log "Pull got $blockHashString ($blockType)${skippingText}"
+				}
+			}}
+
+			if {!$chainReachedEnd} {
+				set previous [dict get $block previous]
+				set ::nano::node::bootstrap::lazy_pullQueue([binary decode hex $previous]) true
+			}
+		} bulkPullError]} {
+			set failedToDownload true
+		}
+
+		if {$failedToDownload} {
+			::nano::node::log "Error: $bulkPullError"
+
+			if {[info exists peerSock]} {
+				::nano::node::closeSocket $peerSock
+				unset peerSock
+			}
+
+			if {$lastBlock ne ""} {
+				set blockHash [::nano::block::dict::toHash $block -binary]
+			} else {
+				set blockHash $origBlockHash
+			}
+
+			set ::nano::node::bootstrap::lazy_pullQueue($origBlockHash) true
+		}
+	}
+
+	if {[info exists peerSock]} {
+		::nano::node::closeSocket $peerSock
+	}
+
+	incr ::nano::node::bootstrap::lazyPeerCount -1
+}
+
 proc ::nano::node::bootstrap::peer {peer peerPort} {
 	::nano::node::log "Connecting to ${peer}:${peerPort}"
 
@@ -2524,6 +2943,47 @@ proc ::nano::node::_randomSortList {args} {
 	}} $salt] $list
 }
 
+proc ::nano::node::bootstrap_lazy {startBlockHash} {
+	if {[string length $startBlockHash] != $::nano::block::hashLength} {
+		set startBlockHash [binary decode hex $startBlockHash]
+	}
+
+	set ::nano::node::bootstrap::lazy_pullQueue($startBlockHash) true
+
+	if {[info exists ::nano::node::bootstrap::lazyRunning]} {
+		return
+	}
+	set ::nano::node::bootstrap::lazyRunning true
+
+	set ::nano::node::bootstrap::lazyPeerCount 0
+
+	while {[llength [array names ::nano::node::bootstrap::lazy_pullQueue]] != 0 || $::nano::node::bootstrap::lazyPeerCount != 0} {
+		set peerInfoList [::nano::node::getPeers]
+		::nano::node::log "Have [llength $peerInfoList] peers"
+
+		foreach peerInfo $peerInfoList {
+			set peer     [dict get $peerInfo "address"]
+			set peerPort [dict get $peerInfo "port"]
+
+			if {[llength [info command ::nano::node::bootstrap::peer_*]] >= [dict get $::nano::node::configuration node bootstrap_connections]} {
+				continue
+			}
+
+			set peerId [binary encode hex [::nano::internal::hashData "lazy:$peer:$peerPort" 5]]
+
+			if {[info command ::nano::node::bootstrap::peer_${peerId}] ne ""} {
+				continue
+			}
+
+			coroutine ::nano::node::bootstrap::peer_${peerId} ::nano::node::bootstrap::lazy_peer $peer $peerPort
+		}
+
+		::nano::node::_sleep 30000
+	}
+
+	unset ::nano::node::bootstrap::lazyRunning
+}
+
 proc ::nano::node::bootstrap {} {
 	set ::nano::node::bootstrap::frontiers_to_pull [list]
 	set ::nano::node::bootstrap::frontier_req_running false
@@ -2555,9 +3015,9 @@ proc ::nano::node::bootstrap {} {
 
 proc ::nano::network::_connect {host port} {
 	if {[info coroutine] eq ""} {
-		set sock [::socket $host $port]
+		set sock [socket $host $port]
 	} else {
-		set sock [::socket -async $host $port]
+		set sock [socket -async $host $port]
 		chan event $sock writable [info coroutine]
 		chan event $sock readable [info coroutine]
 
@@ -2635,8 +3095,12 @@ proc ::nano::node::_sleep {ms {verbose 1}} {
 		::nano::node::log "Sleeping for $ms ms"
 	}
 
-	after $ms [info coroutine]
-	yield
+	if {[info coroutine] eq ""} {
+		after $ms
+	} else {
+		after $ms [info coroutine]
+		yield
+	}
 }
 
 proc ::nano::node::getPeers {} {
@@ -2739,7 +3203,7 @@ proc ::nano::network::server::keepalive {messageDict} {
 				set node_id_nonce [::nano::internal::randomBytes 32]
 				set ::nano::node::_node_id_nonces($peer) [dict create query $node_id_nonce lastSeen $now]
 
-				set peerSock [::nano::node::socket realtime $address $port]
+				set peerSock [::nano::node::createSocket realtime $address $port]
 #puts "Querying $peerSock with node_id_handshake (1)"
 				::nano::network::client $peerSock "node_id_handshake" query -query $node_id_nonce
 			}
@@ -2947,7 +3411,20 @@ proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
 	return $retval
 }
 
-proc ::nano::node::socket {type address port} {
+proc ::nano::node::closeSocket {peerSock} {
+	if {[catch {
+		if {[dict get $peerSock "type"] eq "realtime"} {
+			# XXX:TODO: Probably don't close this socket
+			set socket [dict get $peerSock "socket"]
+		}
+	}]} {
+		set socket $peerSock
+	}
+
+	close $socket
+}
+
+proc ::nano::node::createSocket {type address port} {
 	if {$type eq "realtime"} {
 		# Determine our listening port
 		set peeringPort [dict get $::nano::node::configuration node peering_port]
@@ -2995,7 +3472,7 @@ proc ::nano::node::realtime::incoming {socket} {
 	set remote [chan configure $socket -peer]
 	set address [lindex $remote 0]
 	set port [lindex $remote 1]
-	set peerSock [::nano::node::socket realtime $address $port]
+	set peerSock [::nano::node::createSocket realtime $address $port]
 	set response [::nano::network::server $data "realtime" $peerSock]
 	if {$response eq ""} {
 		return
@@ -3014,7 +3491,7 @@ proc ::nano::node::realtime {} {
 	set clientIDPrivateKey [dict get $::nano::node::configuration node client_id_private_key]
 
 	# Start listening
-	::nano::node::socket realtime "" ""
+	::nano::node::createSocket realtime "" ""
 
 	# Periodically send keepalives to all known peers
 	while true {
@@ -3042,7 +3519,7 @@ proc ::nano::node::realtime {} {
 			set peerAddress [dict get $peerInfo "address"]
 			set peerPort [dict get $peerInfo "port"]
 
-			set peerSock [::nano::node::socket realtime $peerAddress $peerPort]
+			set peerSock [::nano::node::createSocket realtime $peerAddress $peerPort]
 
 			set node_id_nonce [::nano::internal::randomBytes 32]
 
@@ -3324,10 +3801,23 @@ proc ::nano::node::cli::stats args {
 		set globalOnly true
 	}
 
+	if {[lindex $args 0] in {"-rep" "-representative"}} {
+		set repOnly [::nano::address::toPublicKey [lindex $args 1] -binary]
+	}
+
 	set maxKeyLen 0
 	foreach {key val} [array get ::nano::node::stats] {
-		if {$globalOnly} {
-			if {[lindex $key 1] eq "rep"} {
+		if {[lindex $key 1] eq "rep"} {
+			if {$globalOnly} {
+				continue
+			} elseif {[info exists repOnly]} {
+				if {$repOnly ne [::nano::address::toPublicKey [lindex $key 2] -binary]} {
+					continue
+				}
+				set key [concat [lrange $key 0 0] [lrange $key 3 end]]
+			}
+		} else {
+			if {[info exists repOnly]} {
 				continue
 			}
 		}
@@ -3358,12 +3848,37 @@ proc ::nano::node::cli::help args {
 
 		foreach command [lsort -dictionary [info command ::nano::node::cli::*]] {
 			set command [namespace tail $command]
+			if {[string match "_*" $command]} {
+				continue
+			}
+
 			set description ""
 			lappend response [format "   %-12s - %s" $command $description]
 		}
 	}
 
 	return [join $response "\n"]
+}
+
+proc ::nano::node::cli::network {} {
+	return [dict get $::nano::node::configuration network]
+}
+
+proc ::nano::node::cli::config args {
+	set config $::nano::node::configuration
+	dict set config node client_id_private_key [binary encode hex [dict get $config node client_id_private_key]]
+	set subtreePrefix [lrange $args 0 end-1]
+	set subtreeKey [lindex $args end]
+	set subtreePrefixConfig [join $subtreePrefix /]
+	if {$subtreePrefixConfig ne ""} {
+		append subtreePrefixConfig "/"
+	}
+
+	set subtree [dict get $config {*}$subtreePrefix]
+
+	set json [::nano::node::_configDictToJSON $subtree $subtreePrefixConfig $subtreeKey]
+
+	return $json
 }
 
 proc ::nano::node::cli::peers args {
@@ -3405,6 +3920,44 @@ proc ::nano::node::cli::peers args {
 		lappend response "  $peer: $age"
 	}
 	return [join $response "\n"]
+}
+
+proc ::nano::node::cli::_pull_chain {startBlockHash {endBlockHash "genesis"}} {
+	if {$endBlockHash eq "genesis"} {
+		set network [dict get $::nano::node::configuration network]
+		set endBlockHash [::nano::block::dict::toHash [::nano::block::dict::genesis $network] -hex]
+	}
+
+	set startBlockHash [binary decode hex $startBlockHash]
+	set endBlockHash [binary decode hex $endBlockHash]
+
+	if {[string length $startBlockHash] != $::nano::block::hashLength} {
+		error "Invalid start block hash specified"
+	}
+
+	if {[string length $endBlockHash] != $::nano::block::hashLength} {
+		error "Invalid end block hash specified"
+	}
+
+	set startBlockHash [string toupper [binary encode hex $startBlockHash]]
+	set endBlockHash [string toupper [binary encode hex $endBlockHash]]
+
+	::nano::node::bootstrap::TMP_LEDGER_ADDBLOCKHASH $endBlockHash
+
+	puts "Pulling $startBlockHash to $endBlockHash"
+
+	set startTime [clock seconds]
+	coroutine ::nano::node::bootstrap::runLazy ::nano::node::bootstrap_lazy $startBlockHash
+	if {![info exists ::nano::node::bootstrap::lazyRunning]} {
+		vwait ::nano::node::bootstrap::lazyRunning
+	}
+	vwait ::nano::node::bootstrap::lazyRunning
+	set endTime [clock seconds]
+
+	set blocksPulled [::nano::node::bootstrap::TMP_LEDGER_BLOCKHASHCOUNT]
+	set delta [expr {$endTime - $startTime}]
+
+	puts "Pulled $blocksPulled blocks in [::nano::node::cli::_interval $delta]"
 }
 
 namespace eval ::nano::node::cli {
