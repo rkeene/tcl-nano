@@ -1910,9 +1910,18 @@ if {[info command ::nano::node::user_log] eq ""} {
 
 proc ::nano::node::log {message {level "debug"}} {
 	set linePrefix ""
+	set now [clock seconds]
+
 	foreach line [split $message "\n"] {
-		::nano::node::user_log [format {%-40s %10s [%5s] %s} [::info coroutine] [clock seconds] $level ${linePrefix}$line]
+		set line [format {%-40s %10s [%5s] %s} [::info coroutine] $now $level ${linePrefix}$line]
+		::nano::node::user_log $line
 		set linePrefix "    "
+
+		lappend ::nano::node::log $line
+	}
+
+	if {($now % 30) == 0} {
+		set ::nano::node::log [lrange $::nano::node::log end-19 end]
 	}
 }
 
@@ -3235,7 +3244,8 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 
 	if {"query" in [dict get $messageDict flags]} {
 		set query [dict get $messageDict query]
-		set retval [dict create "invoke_client" [list node_id_handshake response -query [binary decode hex $query]]]
+		set clientID [dict get $::nano::node::configuration node client_id_private_key]
+		set retval [dict create "invoke_client" [list node_id_handshake response -privateKey $clientID -query [binary decode hex $query]]]
 	}
 
 	if {"response" in [dict get $messageDict flags]} {
@@ -3770,7 +3780,7 @@ proc ::nano::node::cli::_interval {interval} {
 	return "[lreverse $response]"
 }
 
-proc ::nano::node::cli::uptime {} {
+proc {::nano::node::cli::show uptime} {} {
 	set now [clock seconds]
 	set start $::nano::node::startTime
 	set statsStart $::nano::node::statsStartTime
@@ -3785,7 +3795,17 @@ proc ::nano::node::cli::uptime {} {
 	return [join $response "\n"]
 }
 
-proc ::nano::node::cli::stats args {
+proc {::nano::node::cli::show node-id} args {
+	set nodeIDPrivate [dict get $::nano::node::configuration node client_id_private_key]
+	set nodeIDPublic [::nano::key::publicKeyFromPrivateKey $nodeIDPrivate -hex]
+	return $nodeIDPublic
+}
+
+proc {::nano::node::cli::show logs} args {
+	return [join [lrange $::nano::node::log end-19 end] "\n"]
+}
+
+proc {::nano::node::cli::show stats} args {
 	if {[lindex $args 0] eq "-clear"} {
 		set ::nano::node::statsStartTime [clock seconds]
 
@@ -3837,18 +3857,25 @@ proc ::nano::node::cli::stats args {
 	return
 }
 
-proc ::nano::node::cli::version {} {
+proc {::nano::node::cli::show version} {} {
 	return [package present nano]
 }
 
-proc ::nano::node::cli::help args {
+proc ::nano::node::cli::_help {commandRoot args} {
 	set response [list]
 	if {[llength $args] == 0} {
 		lappend response "Commands:"
 
-		foreach command [lsort -dictionary [info command ::nano::node::cli::*]] {
+		set pattern [string trimleft "${commandRoot} *"]
+
+		foreach command [lsort -dictionary [info command ::nano::node::cli::${pattern}]] {
 			set command [namespace tail $command]
 			if {[string match "_*" $command]} {
+				continue
+			}
+
+			set extra [string trim [string range $command [string length $commandRoot] end]]
+			if {[string first " " $extra] != -1} {
 				continue
 			}
 
@@ -3860,28 +3887,15 @@ proc ::nano::node::cli::help args {
 	return [join $response "\n"]
 }
 
-proc ::nano::node::cli::network {} {
+proc ::nano::node::cli::help args {
+	tailcall _help "" {*}$args
+}
+
+proc {::nano::node::cli::show network} {} {
 	return [dict get $::nano::node::configuration network]
 }
 
-proc ::nano::node::cli::config args {
-	set config $::nano::node::configuration
-	dict set config node client_id_private_key [binary encode hex [dict get $config node client_id_private_key]]
-	set subtreePrefix [lrange $args 0 end-1]
-	set subtreeKey [lindex $args end]
-	set subtreePrefixConfig [join $subtreePrefix /]
-	if {$subtreePrefixConfig ne ""} {
-		append subtreePrefixConfig "/"
-	}
-
-	set subtree [dict get $config {*}$subtreePrefix]
-
-	set json [::nano::node::_configDictToJSON $subtree $subtreePrefixConfig $subtreeKey]
-
-	return $json
-}
-
-proc ::nano::node::cli::peers args {
+proc {::nano::node::cli::show peers} args {
 	if {[lindex $args 0] eq "-count"} {
 		return [llength [::nano::node::getPeers]]
 	}
@@ -3896,9 +3910,8 @@ proc ::nano::node::cli::peers args {
 		}
 	}
 
-	lappend response "Peers:"
-
 	set now [clock seconds]
+	set response [list]
 	foreach peer [::nano::node::getPeers] {
 		if {[info exists glob]} {
 			if {![string match $glob $peer] == !$globInvert} {
@@ -3958,6 +3971,89 @@ proc ::nano::node::cli::_pull_chain {startBlockHash {endBlockHash "genesis"}} {
 	set delta [expr {$endTime - $startTime}]
 
 	puts "Pulled $blocksPulled blocks in [::nano::node::cli::_interval $delta]"
+}
+
+proc ::nano::node::cli::_multiword {baseCommand args} {
+	if {[llength $args] == 0} {
+		set args [list "help"]
+	}
+
+	set matched false
+	set includeBaseCommand false
+	foreach base [list $baseCommand _multiword] {
+		for {set included [expr {[llength $args] - 1}]} {$included >= 0} {incr included -1} {
+			set proc "::nano::node::cli::${base} [join [lrange $args 0 $included] { }]"
+			if {[info command $proc] ne ""} {
+				set matched true
+
+				break
+			}
+		}
+
+		if {$matched} {
+			if {$base eq "_multiword"} {
+				set includeBaseCommand true
+			}
+
+			break
+		}
+	}
+
+	if {!$matched} {
+		return -code error "No matching commands in $baseCommand [join $args { }]"
+	}
+
+	set args [lrange $args $included+1 end]
+
+	if {$includeBaseCommand} {
+		set args [concat [list $baseCommand] $args]
+	}
+
+	tailcall $proc {*}$args
+}
+
+proc {::nano::node::cli::_multiword help} {base args} {
+	tailcall _help ${base} {*}$args
+}
+
+proc ::nano::node::cli::show {args} {
+	tailcall ::nano::node::cli::_multiword show {*}$args
+}
+
+proc ::nano::node::cli::config {args} {
+	tailcall ::nano::node::cli::_multiword config {*}$args
+}
+
+proc {::nano::node::cli::config get} {args} {
+	set config $::nano::node::configuration
+	dict set config node client_id_private_key [binary encode hex [dict get $config node client_id_private_key]]
+	set subtreePrefix [lrange $args 0 end-1]
+	set subtreeKey [lindex $args end]
+	set subtreePrefixConfig [join $subtreePrefix /]
+	if {$subtreePrefixConfig ne ""} {
+		append subtreePrefixConfig "/"
+	}
+
+	set subtree [dict get $config {*}$subtreePrefix]
+
+	set json [::nano::node::_configDictToJSON $subtree $subtreePrefixConfig $subtreeKey]
+
+	return $json
+}
+
+proc {::nano::node::cli::config set} {args} {
+	set val [lindex $args end]
+	set key [lrange $args 0 end-1]
+	lappend response "Old:"
+	lappend response [{::nano::node::cli::config get} {*}$key]
+
+	dict set ::nano::node::configuration {*}$key $val
+
+	lappend response ""
+	lappend response "New:"
+	lappend response [{::nano::node::cli::config get} {*}$key]
+
+	return [join $response "\n"]
 }
 
 namespace eval ::nano::node::cli {
