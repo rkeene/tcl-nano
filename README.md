@@ -36,9 +36,16 @@ available without these packages):
    - The Tcl package [lmdb](https://github.com/ray2501/tcl-lmdb)
    - The Tcl package [udp](http://tcludp.sourceforge.net/)
    - The Tcl package [tclreadline](http://tclreadline.sourceforge.net/)
+   - The curl command
 
-On a Debian system you should be able to do the following:
+On a Debian system you should be able to do the following (to use the package):
 
 ```
-$ sudo apt install -y tcl8.6 tcllib tcl-udp tcl-tclreadline
+$ sudo apt install -y tcl8.6 tcllib tcl-udp tcl-tclreadline curl
+```
+
+The following packages are sufficient to compile the package:
+
+```
+$ sudo apt install -y build-essential tcl8.6-dev
 ```
