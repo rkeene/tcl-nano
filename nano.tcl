@@ -19,6 +19,7 @@ namespace eval ::nano::ledger {}
 namespace eval ::nano::ledger::lmdb {}
 namespace eval ::nano::rpc {}
 namespace eval ::nano::rpc::client {}
+namespace eval ::nano::rpc::cli {}
 namespace eval ::nano::balance {}
 namespace eval ::nano::node::bootstrap {}
 namespace eval ::nano::node::realtime {}
@@ -29,6 +30,7 @@ namespace eval ::nano::protocol::create {}
 namespace eval ::nano::protocol::parse {}
 namespace eval ::nano::protocol::extensions {}
 namespace eval ::nano::network::_dns {}
+namespace eval ::nano::_cli {}
 
 # Constants
 set ::nano::block::genesis(main) {{
@@ -65,6 +67,15 @@ set ::nano::network::messageTypes {
 	"bulk_pull_blocks"
 	"node_id_handshake"
 	"bulk_pull_account"
+}
+set ::nano::block::blockTypes {
+	"invalid"
+	"not_a_block"
+	"send"
+	"receive"
+	"open"
+	"change"
+	"state"
 }
 set ::nano::balance::_conversion {
 	GNano 1000000000000000000000000000000000000000
@@ -512,15 +523,11 @@ proc ::nano::block::typeIDFromType {type args} {
 		}
 	}
 
-	switch -- $type {
-		"invalid"     { set typeId 0 }
-		"not_a_block" { set typeId 1 }
-		"send"        { set typeId 2 }
-		"receive"     { set typeId 3 }
-		"open"        { set typeId 4 }
-		"change"      { set typeId 5 }
-		"state"       { set typeId 6 }
-		default       { error "Invalid type: $type" }
+	set type [string tolower $type]
+	set typeId [lsearch -exact $::nano::block::blockTypes $type]
+
+	if {$typeId == -1} {
+		error "Invalid type: $type"
 	}
 
 	switch -- $outputFormat {
@@ -570,17 +577,10 @@ proc ::nano::block::typeFromTypeID {typeId args} {
 		}
 	}
 
-	switch -- [format %i $typeId] {
-		0 { set type "invalid" }
-		1 { set type "not_a_block" }
-		2 { set type "send" }
-		3 { set type "receive" }
-		4 { set type "open" }
-		5 { set type "change" }
-		6 { set type "state" }
-		default {
-			error "Invalid type ID: $typeId"
-		}
+	set typeId [format %i $typeId]
+	set type [lindex $::nano::block::blockTypes $typeId]
+	if {$type eq ""} {
+		error "Invalid type ID: $typeId"
 	}
 
 	return $type
@@ -3112,6 +3112,21 @@ proc ::nano::node::_sleep {ms {verbose 1}} {
 	}
 }
 
+proc ::nano::internal::parseAddress {address defaultPort} {
+	set addressPort $defaultPort
+	if {[string index $address 0] eq "\["} {
+		regexp {\]:(.*)$} $address -> addressPort
+		regexp {^\[(.*)\].*$} $address -> address
+		regexp {^::ffff:([0-9\.]*$)} $address -> address
+	} elseif {[string match "*:*" $address]} {
+		set address [split $address :]
+		set addressPort [lindex $address 1]
+		set address [lindex $address 0]
+	}
+
+	return [list $address $addressPort]
+}
+
 proc ::nano::node::getPeers {} {
 	if {[info exists ::nano::node::configuration]} {
 		set peers [dict get $::nano::node::configuration node preconfigured_peers]
@@ -3122,9 +3137,11 @@ proc ::nano::node::getPeers {} {
 
 	set completePeers [list]
 	foreach peer $peers {
+		lassign [::nano::internal::parseAddress $peer $defaultPeerPort] peer peerPort
+
 		catch {
 			foreach peer [::nano::network::_dns::toIPList $peer] {
-				lappend completePeers [dict create address $peer port $defaultPeerPort]
+				lappend completePeers [dict create address $peer port $peerPort]
 			}
 		}
 	}
@@ -3305,11 +3322,11 @@ proc ::nano::network::server::confirm_ack {messageDict} {
 	incr ::nano::node::stats([list confirm_ack rep $voteAccount votedOnCount]) $votedOn
 
 	foreach hash $hashes {
-		set ::nano::node::_stats_seen_hashes($hashes) 1
-		set ::nano::node::_stats_seen_hashes_by_rep([list $voteAccount $hashes]) 1
+		set ::nano::node::_stats_seen_hashes([list confirm_ack $hash]) 1
+		set ::nano::node::_stats_seen_hashes_by_rep([list $voteAccount $hash]) 1
 	}
 
-	set ::nano::node::stats([list confirm_ack votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes]]
+	set ::nano::node::stats([list confirm_ack votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes [list confirm_ack *]]]
 	set ::nano::node::stats([list confirm_ack rep $voteAccount votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes_by_rep [list $voteAccount *]]]
 
 	return ""
@@ -3336,6 +3353,15 @@ proc ::nano::network::server::publish {messageDict} {
 	#puts "block: [binary encode hex $blockData]"
 #9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036f4e1ff833324efc81c237776242928ef76a2cdfaa53f4c4530ee39bfff1977e26e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fc492fd20e57d048e000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465169006f988549a8b1e20e0a09b4b4dcae5397f6fcc4d507675f58c2b29ae02341b0a4fe562201a61bf27481aa4567c287136b4fd26b4840c93c42c7d1f5c518503d68ec561af4b8cf8
 #9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036fa5e3647d3d296ec72baea013ba7fa1bf5c3357c33c90196f078ba091295e6e03e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fb2604ebd1fe098b8000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465165287cd9c61752dc9d011f666534dbdc10461e927503f9599791d73b1cca7fdc032d76db3f91e5b5c3d6206fa48b01bd08da4a89f2e880242e9917cfc3db80d0b9bfe8e6d1dd183d5
+	# XXX:TODO: Validate
+	set valid true
+	incr ::nano::node::stats([list publish valid $valid])
+
+	set hash [dict get $messageDict hash]
+	set ::nano::node::_stats_seen_hashes([list publish $hash]) 1
+
+	set ::nano::node::stats([list publish unique]) [llength [array names ::nano::node::_stats_seen_hashes [list publish *]]]
+
 	return ""
 }
 
@@ -3572,9 +3598,11 @@ proc ::nano::node::start args {
 # RPC Client
 ## Side-effect: Sets ::nano::rpc::client::config
 proc ::nano::rpc::client::init args {
+	package require http 2
+
 	if {![info exists ::nano::rpc::client::config]} {
 		set ::nano::rpc::client::config [dict create \
-		    url "http://localhost:7076/" \
+		    -url "http://localhost:7076/" \
 		]
 	}
 
@@ -3588,7 +3616,7 @@ proc ::nano::rpc::client::init args {
 proc ::nano::rpc::client {action args} {
 	::nano::rpc::client::init
 
-	set rpcURL [dict get $::nano::rpc::client::config "url"]
+	set rpcURL [dict get $::nano::rpc::client::config "-url"]
 
 	set jsonArgs [list]
 	foreach {key value} $args {
@@ -3634,6 +3662,14 @@ proc ::nano::rpc::client {action args} {
 
 # Account balance manipulation
 proc ::nano::balance::toUnit {raw toUnit {decimals 0}} {
+	if {![string is entier -strict $raw]} {
+		error "Raw values must not be fractional"
+	}
+
+	if {$toUnit eq "raw"} {
+		return $raw
+	}
+
 	set divisor [dict get $::nano::balance::_conversion $toUnit]
 
 	if {$decimals == 0} {
@@ -3688,7 +3724,7 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	set humanUnit [normalizeUnitName _USER]
 	set humanUnitMultiplier [dict get $::nano::balance::_conversion $humanUnit]
 
-	if {$raw > [expr {$humanUnitMultiplier / 10000000}]} {
+	if {$raw > [expr {$humanUnitMultiplier / (10 ** $decimals)}]} {
 		set baseUnit $humanUnit
 	} else {
 		set baseUnit "raw"
@@ -3706,12 +3742,36 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	return $result
 }
 
-proc ::nano::node::cli args {
-	switch -exact -- [lindex $args 0] {
-		"-interactive" {
-			set ::nano::node::cli::_using_repl true
+# Generic CLI helpers
+proc ::nano::_cli {namespace args} {
+	for {set argIndex 0} {$argIndex < [llength $args]} {incr argIndex} {
+		set arg [lindex $args $argIndex]
+		switch -exact -- $arg {
+			"-prompt" {
+				incr argIndex
+				set prompt [lindex $args $argIndex]
+			}
+			"-interactive" {
+				set mode "interactive"
+			}
+			"-import" {
+				set mode "import"
+			}
+			default {
+				error "Unknown argument: $arg"
+			}
+		}
+	}
 
-			::nano::node::cli -import
+	if {![info exists mode]} {
+		error "Must specify either -interactive or -import"
+	}
+
+	switch -exact -- $mode {
+		"interactive" {
+			set ::nano::${namespace}::cli::_using_repl true
+
+			::nano::_cli $namespace -import
 
 			set use_tclreadline false
 			catch {
@@ -3719,10 +3779,12 @@ proc ::nano::node::cli args {
 				set use_tclreadline true
 			}
 
+			if {![info exists prompt]} {
+				set prompt { return "> " }
+			}
+
 			if {$use_tclreadline} {
-				proc ::tclreadline::prompt1 {} {
-					return "\[[dict get $::nano::node::configuration network]\] nano-node [package present nano]> "
-				}
+				proc ::tclreadline::prompt1 {} $prompt
 				::tclreadline::Loop
 			} else {
 				fconfigure stdout -blocking false
@@ -3751,19 +3813,16 @@ proc ::nano::node::cli args {
 				vwait forever
 			}
 		}
-		"-import" {
-			uplevel #0 {
-				namespace import ::nano::node::cli::*
-			}
+		"import" {
+			uplevel #0 [list namespace import ::nano::${namespace}::cli::*]
 		}
 		default {
-			error "Not implemented"
+			error "Not implemented: $mode"
 		}
 	}
-
 }
 
-proc ::nano::node::cli::_interval {interval} {
+proc ::nano::_cli::interval {interval} {
 	set response [list]
 	foreach {divisor unit} {60 seconds 60 minutes 24 hours 36527 days 1 century} {
 		set amount [expr {$interval % $divisor}]
@@ -3780,6 +3839,86 @@ proc ::nano::node::cli::_interval {interval} {
 	return "[lreverse $response]"
 }
 
+proc ::nano::_cli::help {namespace commandRoot args} {
+	set response [list]
+	if {[llength $args] == 0} {
+		lappend response "Commands:"
+
+		set pattern [string trimleft "${commandRoot} *"]
+
+		foreach command [lsort -dictionary [info command ::nano::${namespace}::cli::${pattern}]] {
+			set command [namespace tail $command]
+			if {[string match "_*" $command]} {
+				continue
+			}
+
+			set extra [string trim [string range $command [string length $commandRoot] end]]
+			if {[string first " " $extra] != -1} {
+				continue
+			}
+
+			set description ""
+			lappend response [format "   %-12s - %s" $command $description]
+		}
+	}
+
+	return [join $response "\n"]
+}
+
+proc ::nano::_cli::multiword {namespace baseCommand args} {
+	if {[llength $args] == 0} {
+		set args [list "help"]
+	}
+
+	set matched false
+	set includeBaseCommand false
+	foreach base [list $baseCommand multiword] {
+		for {set included [expr {[llength $args] - 1}]} {$included >= 0} {incr included -1} {
+			if {$base eq "multiword"} {
+				set proc "::nano::_cli::${base} [join [lrange $args 0 $included] { }]"
+			} else {
+				set proc "::nano::${namespace}::cli::${base} [join [lrange $args 0 $included] { }]"
+			}
+			if {[info command $proc] ne ""} {
+				set matched true
+
+				break
+			}
+		}
+
+		if {$matched} {
+			if {$base eq "multiword"} {
+				set includeBaseCommand true
+			}
+
+			break
+		}
+	}
+
+	if {!$matched} {
+		return -code error "No matching commands in $baseCommand [join $args { }]"
+	}
+
+	set args [lrange $args $included+1 end]
+
+	if {$includeBaseCommand} {
+		set args [concat [list $namespace $baseCommand] $args]
+	}
+
+	tailcall $proc {*}$args
+}
+
+proc {::nano::_cli::multiword help} {namespace base args} {
+	tailcall help $namespace $base {*}$args
+}
+
+# Node CLI
+proc ::nano::node::cli {args} {
+	tailcall ::nano::_cli node -prompt {
+		return "\[[dict get $::nano::node::configuration network]\] nano-node [package present nano]> "
+	} {*}$args
+}
+
 proc {::nano::node::cli::show uptime} {} {
 	set now [clock seconds]
 	set start $::nano::node::startTime
@@ -3789,8 +3928,8 @@ proc {::nano::node::cli::show uptime} {} {
 	set uptimeStats [expr {$now - $statsStart}]
 
 	set format {%-19s: %s}
-	lappend response [format $format Uptime [_interval $uptime]]
-	lappend response [format $format "Stats last cleared" "[_interval $uptimeStats] ago"]
+	lappend response [format $format Uptime [::nano::_cli::interval $uptime]]
+	lappend response [format $format "Stats last cleared" "[::nano::_cli::interval $uptimeStats] ago"]
 
 	return [join $response "\n"]
 }
@@ -3861,34 +4000,8 @@ proc {::nano::node::cli::show version} {} {
 	return [package present nano]
 }
 
-proc ::nano::node::cli::_help {commandRoot args} {
-	set response [list]
-	if {[llength $args] == 0} {
-		lappend response "Commands:"
-
-		set pattern [string trimleft "${commandRoot} *"]
-
-		foreach command [lsort -dictionary [info command ::nano::node::cli::${pattern}]] {
-			set command [namespace tail $command]
-			if {[string match "_*" $command]} {
-				continue
-			}
-
-			set extra [string trim [string range $command [string length $commandRoot] end]]
-			if {[string first " " $extra] != -1} {
-				continue
-			}
-
-			set description ""
-			lappend response [format "   %-12s - %s" $command $description]
-		}
-	}
-
-	return [join $response "\n"]
-}
-
 proc ::nano::node::cli::help args {
-	tailcall _help "" {*}$args
+	tailcall ::nano::_cli::help node "" {*}$args
 }
 
 proc {::nano::node::cli::show network} {} {
@@ -3970,58 +4083,15 @@ proc ::nano::node::cli::_pull_chain {startBlockHash {endBlockHash "genesis"}} {
 	set blocksPulled [::nano::node::bootstrap::TMP_LEDGER_BLOCKHASHCOUNT]
 	set delta [expr {$endTime - $startTime}]
 
-	puts "Pulled $blocksPulled blocks in [::nano::node::cli::_interval $delta]"
-}
-
-proc ::nano::node::cli::_multiword {baseCommand args} {
-	if {[llength $args] == 0} {
-		set args [list "help"]
-	}
-
-	set matched false
-	set includeBaseCommand false
-	foreach base [list $baseCommand _multiword] {
-		for {set included [expr {[llength $args] - 1}]} {$included >= 0} {incr included -1} {
-			set proc "::nano::node::cli::${base} [join [lrange $args 0 $included] { }]"
-			if {[info command $proc] ne ""} {
-				set matched true
-
-				break
-			}
-		}
-
-		if {$matched} {
-			if {$base eq "_multiword"} {
-				set includeBaseCommand true
-			}
-
-			break
-		}
-	}
-
-	if {!$matched} {
-		return -code error "No matching commands in $baseCommand [join $args { }]"
-	}
-
-	set args [lrange $args $included+1 end]
-
-	if {$includeBaseCommand} {
-		set args [concat [list $baseCommand] $args]
-	}
-
-	tailcall $proc {*}$args
-}
-
-proc {::nano::node::cli::_multiword help} {base args} {
-	tailcall _help ${base} {*}$args
+	puts "Pulled $blocksPulled blocks in [::nano::_cli::interval $delta]"
 }
 
 proc ::nano::node::cli::show {args} {
-	tailcall ::nano::node::cli::_multiword show {*}$args
+	tailcall ::nano::_cli::multiword node show {*}$args
 }
 
 proc ::nano::node::cli::config {args} {
-	tailcall ::nano::node::cli::_multiword config {*}$args
+	tailcall ::nano::_cli::multiword node config {*}$args
 }
 
 proc {::nano::node::cli::config get} {args} {
@@ -4056,10 +4126,166 @@ proc {::nano::node::cli::config set} {args} {
 	return [join $response "\n"]
 }
 
+# RPC CLI
+proc ::nano::rpc::cli {args} {
+	tailcall ::nano::_cli rpc -prompt {
+		if {![info exists ::nano::rpc::cli::_cached_network]} {
+			set ::nano::rpc::cli::_cached_network [{::nano::rpc::cli::show network}]
+		}
+
+		if {![info exists ::nano::rpc::cli::_cached_version]} {
+			set ::nano::rpc::cli::_cached_version [{::nano::rpc::cli::show version} -vendor]
+		}
+
+		set network $::nano::rpc::cli::_cached_network
+		set version $::nano::rpc::cli::_cached_version
+
+		return "\[$network\] nano-rpc $version> "
+	} {*}$args
+}
+
+proc ::nano::rpc::cli::help args {
+	tailcall ::nano::_cli::help rpc "" {*}$args
+}
+
+proc ::nano::rpc::cli::show args {
+	tailcall ::nano::_cli::multiword rpc show {*}$args
+}
+
+proc {::nano::rpc::cli::show uptime} args {
+	set stats [::nano::rpc::client stats -type counters]
+	set started [dict get $stats created]
+	set started [clock scan $started -format {%Y.%m.%d %H:%M:%S}]
+	set now [clock seconds]
+	set delta [expr {$now - $started}]
+
+	puts "$now, $started"
+
+	return [::nano::_cli::interval $delta]
+}
+
+proc {::nano::rpc::cli::show stats} args {
+	set response [list]
+	if {[llength $args] == 0} {
+		set args [list -counters -samples -bootstrap -blocks]
+	}
+
+	if {[lsearch -exact $args "-counters"] != -1} {
+		lappend countersResponse "Counters:"
+		set stats [::nano::rpc::client stats -type counters]
+		foreach stat [dict get $stats entries] {
+			set value [dict get $stat value]
+			dict unset stat value
+			lappend countersResponse "  $stat = $value"
+		}
+		lappend response [join $countersResponse "\n"]
+	}
+
+	if {[lsearch -exact $args "-samples"] != -1} {
+		unset -nocomplain stats
+		set stats [::nano::rpc::client stats -type samples]
+		set entries [dict get $stats entries]
+		if {[llength $entries] > 0} {
+			lappend samplesResponse "Samples:"
+			foreach stat $entries {
+				lappend samplesResponse "  $stat"
+			}
+			lappend response [join $samplesResponse "\n"]
+		}
+	}
+
+	if {[lsearch -exact $args "-bootstrap"] != -1} {
+		catch {
+			unset -nocomplain stats
+			set stats [::nano::rpc::client bootstrap_status]
+		}
+		if {[info exists stats]} {
+			lappend bootstrapResponse "Bootstrap:"
+			set maxKeyLength 1
+			foreach {statName _} $stats {
+				set keyLength [string length $statName]
+				if {$keyLength > $maxKeyLength} {
+					set maxKeyLength $keyLength
+				}
+			}
+			foreach {statName statVal} $stats {
+				lappend bootstrapResponse [format "  %-${maxKeyLength}s = %s" $statName $statVal]
+			}
+			lappend response [join $bootstrapResponse "\n"]
+		}
+	}
+
+	if {[lsearch -exact $args "-blocks"] != -1} {
+		set blockCount [::nano::rpc::client block_count]
+		lappend blocksResponse "Blocks:"
+		lappend blocksResponse "  Count     = [dict get $blockCount count]"
+		lappend blocksResponse "  Unchecked = [dict get $blockCount unchecked]"
+		lappend response [join $blocksResponse "\n"]
+	}
+
+	return [join $response "\n\n"]
+}
+
+proc {::nano::rpc::cli::show network} args {
+	foreach network {main beta} {
+		set genesisBlock [::nano::block::dict::genesis $network]
+		set genesisBlockHash [::nano::block::dict::toHash $genesisBlock -hex]
+		catch {
+			set check [dict create]
+			set check [::nano::rpc::client block -hash $genesisBlockHash]
+		}
+		if {[dict exists $check contents]} {
+			return $network
+		}
+	}
+	return "<unknown>"
+}
+
+proc {::nano::rpc::cli::show version} args {
+	set versions [::nano::rpc::client version]
+
+	set vendor [dict get $versions node_vendor]
+	set vendorVersion [lindex [split $vendor] end]
+
+	if {[lsearch -exact $args "-vendor"] != -1} {
+		return $vendorVersion
+	}
+
+	return $versions
+}
+
+proc {::nano::rpc::cli::show peers} args {
+	set peers [dict get [::nano::rpc::client peers] "peers"]
+
+	if {[lindex $args 0] eq "-count"} {
+		return [expr {[llength $peers] / 2}]
+	}
+
+
+	set result [list]
+	foreach {peer peerVersion} $peers {
+		lassign [::nano::internal::parseAddress $peer ""] peer peerPort
+		set peer [list address $peer port $peerPort]
+		lappend result "  $peer: version $peerVersion"
+	}
+
+	return [join $result "\n"]
+}
+
+
+# Export namespaces
 namespace eval ::nano::node::cli {
+	namespace export -clear *
+}
+
+namespace eval ::nano::rpc::cli {
 	namespace export -clear *
 }
 
 if {[info exists ::nano::node::cli::_using_repl]} {
 	::nano::node::cli -import
+}
+
+if {[info exists ::nano::rpc::cli::_using_repl]} {
+	::nano::rpc::cli -import
 }
