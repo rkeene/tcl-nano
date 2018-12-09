@@ -1,10 +1,5 @@
 #! /usr/bin/env tclsh
 
-lappend auto_path [pwd]
-lappend auto_path /opt/appfs/rkeene.org/tcllib/platform/latest/lib
-lappend auto_path /opt/appfs/rkeene.org/tclreadline/platform/latest/lib
-lappend auto_path [file join [pwd] lib]
-
 package require nano
 
 ## Set defaults
