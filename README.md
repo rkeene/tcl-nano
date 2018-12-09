@@ -40,5 +40,5 @@ available without these packages):
 On a Debian system you should be able to do the following:
 
 ```
-$ sudo apt install -y tcl86 tcllib tcl-udp tcl-tclreadline
+$ sudo apt install -y tcl8.6 tcllib tcl-udp tcl-tclreadline
 ```
