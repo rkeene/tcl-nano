@@ -2,7 +2,7 @@ CC            := @CC@
 AR            := @AR@
 RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@ -I@srcdir@/monocypher/ -I@srcdir@/argon2/ @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
+CPPFLAGS      := -I. -I@srcdir@ -I@srcdir@/vendor/monocypher/ -I@srcdir@/vendor/argon2/ @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
@@ -36,24 +36,24 @@ endif
 
 # The amalgamation is used when compiling statically so that the same ABI can be exposed
 # to upstream projects rather than requiring them to filter out our symbols
-nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/monocypher/monocypher.c @srcdir@/argon2.c Makefile
+nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/vendor/monocypher/monocypher.c @srcdir@/argon2.c Makefile
 	rm -f nano-amalgamation.c
-	cat @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/monocypher/monocypher.c @srcdir@/argon2/argon2.c > nano-amalgamation.c
+	cat @srcdir@/nano.c @srcdir@/randombytes.c @srcdir@/vendor/monocypher/monocypher.c @srcdir@/vendor/argon2/argon2.c > nano-amalgamation.c
 
-nano-amalgamation.o: nano-amalgamation.c @srcdir@/monocypher/monocypher.h @srcdir@/argon2/argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
+nano-amalgamation.o: nano-amalgamation.c @srcdir@/vendor/monocypher/monocypher.h @srcdir@/vendor/argon2/argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
 
-nano.o: @srcdir@/nano.c @srcdir@/monocypher/monocypher.h @srcdir@/argon2/argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
+nano.o: @srcdir@/nano.c @srcdir@/vendor/monocypher/monocypher.h @srcdir@/vendor/argon2/argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
 
 randombytes.o: @srcdir@/randombytes.c @srcdir@/randombytes.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o randombytes.o -c @srcdir@/randombytes.c
 
-monocypher.o: @srcdir@/monocypher/monocypher.c @srcdir@/monocypher/monocypher.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o monocypher.o -c @srcdir@/monocypher/monocypher.c
+monocypher.o: @srcdir@/vendor/monocypher/monocypher.c @srcdir@/vendor/monocypher/monocypher.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o monocypher.o -c @srcdir@/vendor/monocypher/monocypher.c
 
-argon2.o: @srcdir@/argon2/argon2.c @srcdir@/argon2/argon2.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o argon2.o -c @srcdir@/argon2/argon2.c
+argon2.o: @srcdir@/vendor/argon2/argon2.c @srcdir@/vendor/argon2/argon2.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o argon2.o -c @srcdir@/vendor/argon2/argon2.c
 
 pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
 	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
@@ -100,7 +100,7 @@ distclean: clean
 mrproper: distclean
 	rm -f @srcdir@/configure @srcdir@/aclocal.m4 @srcdir@/config.guess @srcdir@/config.sub @srcdir@/install-sh
 	rm -f @srcdir@/nano.vers
-	rm -rf @srcdir@/argon2
+	rm -rf @srcdir@/vendor/argon2
 	$(MAKE) -C @srcdir@/build/argon2 distclean
 
 .PHONY: all test clean distclean mrproper

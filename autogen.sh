@@ -81,7 +81,7 @@ rm -rf autom4te.cache
 
 # Assemble argon2
 rm -rf argon2
-make -C build/argon2 install PREFIX="$(pwd)/argon2"
+make -C build/argon2 install PREFIX="$(pwd)/vendor/argon2"
 
 # Assemble version script
 rm -f nano.vers

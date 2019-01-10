@@ -15,7 +15,7 @@ configure
 install-sh
 config.log
 config.status
-argon2
+vendor/argon2
 build/argon2/out
 build/argon2/INST
 build/work
