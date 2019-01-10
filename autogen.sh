@@ -79,13 +79,9 @@ autoconf
 
 rm -rf autom4te.cache
 
-# Assemble tweetnacl
-rm -rf tweetnacl
-make -C build/tweetnacl install PREFIX="$(pwd)/tweetnacl"
-
-# Assemble blake2b
-rm -rf blake2b
-make -C build/blake2b install PREFIX="$(pwd)/blake2b"
+# Assemble argon2
+rm -rf argon2
+make -C build/argon2 install PREFIX="$(pwd)/argon2"
 
 # Assemble version script
 rm -f nano.vers
