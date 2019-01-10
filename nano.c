@@ -22,6 +22,9 @@
 #define NANO_WORK_VALUE_LENGTH 8
 #define NANO_WORK_HASH_LENGTH  8
 #define NANO_WORK_DEFAULT_MIN  0xffffffc000000000LLU
+#define NANO_KDF_ARGON2_MEMORY 64 * 1024
+#define NANO_KDF_ARGON2_TIMING 1
+#define NANO_KDF_ARGON2_THREADS 1
 
 #define TclNano_AttemptAlloc(x) ((void *) Tcl_AttemptAlloc(x))
 #define TclNano_Free(x) Tcl_Free((char *) x)
@@ -282,42 +285,39 @@ static int nano_tcl_verify_detached(ClientData clientData, Tcl_Interp *interp, i
 	clientData = clientData;
 }
 
-#if 0
 static int nano_tcl_derive_key_from_password(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
-	argon2_context argon2_context_item;
+	void *password, *salt;
+	int password_length, salt_length;
+	unsigned char result[32];
+	int hash_ret;
 
-	if (objc != 2) {
-		Tcl_WrongNumArgs(interp, 1, objv, "password");
+	if (objc != 3) {
+		Tcl_WrongNumArgs(interp, 1, objv, "password salt");
 
 		return(TCL_ERROR);
 	}
 
-unsigned char password[] = {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}
-unsigned char salt[] = {0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02}
-unsigned char secret[] = {0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03}
-unsigned char ad[] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}
-unsigned char phd[] = {0x24, 0xfd, 0xe9, 0x5a, 0x9d, 0xf5, 0x49, 0xd0, 0x02, 0xbd, 0x21, 0xb8, 0xb3, 0x45, 0x57, 0xe0, 0xf2, 0x53, 0x03, 0xd6, 0x53, 0x12, 0xf4, 0xc0, 0x7e, 0x1b, 0x0f, 0x12, 0x75, 0xb3, 0xe9, 0xd9, 0x45, 0xe9, 0x7b, 0x66, 0xbf, 0xe4, 0x27, 0x20, 0x6e, 0xca, 0xc7, 0xea, 0x2f, 0xfb, 0x1b, 0xe2, 0xc8, 0x3a, 0x15, 0xa6, 0x64, 0xb2, 0x4b, 0x4f, 0x6b, 0xc3, 0x34, 0x0d, 0x24, 0x89, 0x0b, 0x13}
-unsigned char final_tag[] = {0xf8, 0x7c, 0x95, 0x96, 0xbd, 0xbf, 0x75, 0x0b, 0xfb, 0x35, 0x3a, 0x89, 0x70, 0xe5, 0x44, 0x1a, 0x70, 0x24, 0x3e, 0xb4, 0x90, 0x30, 0xdf, 0xe2, 0x74, 0xd9, 0xad, 0x4e, 0x37, 0x0e, 0x38, 0x9b}
+	password = Tcl_GetByteArrayFromObj(objv[1], &password_length);
+	salt = Tcl_GetByteArrayFromObj(objv[2], &salt_length);
 
-argon2_context_item.pwd = password;
-argon2_context_item.pwdlen = sizeof(password);
-argon2_context_item.salt = salt;
-argon2_context_item.saltlen = sizeof(salt);
-argon2_context_item.secret = secret;
-argon2_context_item.secretlen = sizeof(secret);
-argon2_context_item.ad = ad;
-argon2_context_item.adlen = sizeof(ad);
-argon2_context_item.t_cost = 3;
-argon2_context_item.m_cost = 16;
-argon2_context_item.lanes = 4;
-argon2_context_item.threads = 4;
-argon2_context_item.version = ARGON2_VERSION_NUMBER;
-argon2_context_item.allocate_cbk = NULL;
-argon2_context_item.free_cbk = NULL;
-argon2_context_item.flags = 0;
+	hash_ret = argon2_hash(NANO_KDF_ARGON2_TIMING, NANO_KDF_ARGON2_MEMORY, 1,
+	                       password, password_length,
+	                       salt, salt_length,
+	                       result, sizeof(result),
+	                       NULL, 0, Argon2_d, 0x10);
 
+	if (hash_ret != ARGON2_OK) {
+		Tcl_SetResult(interp, (char *) argon2_error_message(hash_ret), NULL);
+		return(TCL_ERROR);
+	}
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, sizeof(result)));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
 }
-#endif
 
 static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *data, result[NANO_BLOCK_SIGNATURE_LENGTH];
@@ -609,7 +609,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	TclNano_CreateObjCommand(interp, "::nano::internal::signDetached", nano_tcl_sign_detached);
 	TclNano_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached);
 	TclNano_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data);
-//	TclNano_CreateObjCommand(interp, "::nano::internal::deriveKeyFromPassword", nano_tcl_derive_key_from_password);
+	TclNano_CreateObjCommand(interp, "::nano::internal::deriveKeyFromPassword", nano_tcl_derive_key_from_password);
 	TclNano_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::randomBytes", nano_tcl_random_bytes);
