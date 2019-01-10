@@ -1,12 +1,13 @@
 monocypher_dir := @srcdir@/vendor/monocypher/
 argon2_dir     := @srcdir@/vendor/argon2/
 aes_dir        := @srcdir@/vendor/aes/
+aes_cppflags   := -DAES256=1 -DCTR=1 -DCBC=0 -DECB=0
 
 CC            := @CC@
 AR            := @AR@
 RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@ -I$(monocypher_dir) -I$(argon2_dir) -I$(aes_dir) @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
+CPPFLAGS      := -I. -I@srcdir@ -I$(monocypher_dir) -I$(argon2_dir) -I$(aes_dir) $(aes_cppflags) @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
