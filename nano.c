@@ -300,7 +300,7 @@ static int nano_tcl_derive_key_from_password(ClientData clientData, Tcl_Interp *
 	password = Tcl_GetByteArrayFromObj(objv[1], &password_length);
 	salt = Tcl_GetByteArrayFromObj(objv[2], &salt_length);
 
-	hash_ret = argon2_hash(NANO_KDF_ARGON2_TIMING, NANO_KDF_ARGON2_MEMORY, 1,
+	hash_ret = argon2_hash(NANO_KDF_ARGON2_TIMING, NANO_KDF_ARGON2_MEMORY, NANO_KDF_ARGON2_THREADS,
 	                       password, password_length,
 	                       salt, salt_length,
 	                       result, sizeof(result),
@@ -308,6 +308,7 @@ static int nano_tcl_derive_key_from_password(ClientData clientData, Tcl_Interp *
 
 	if (hash_ret != ARGON2_OK) {
 		Tcl_SetResult(interp, (char *) argon2_error_message(hash_ret), NULL);
+
 		return(TCL_ERROR);
 	}
 
