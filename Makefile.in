@@ -1,11 +1,12 @@
 monocypher_dir := @srcdir@/vendor/monocypher/
 argon2_dir     := @srcdir@/vendor/argon2/
+aes_dir        := @srcdir@/vendor/aes/
 
 CC            := @CC@
 AR            := @AR@
 RANLIB        := @RANLIB@
 CFLAGS        := @CFLAGS@ @SHOBJFLAGS@
-CPPFLAGS      := -I. -I@srcdir@ -I$(monocypher_dir) -I$(argon2_dir) @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
+CPPFLAGS      := -I. -I@srcdir@ -I$(monocypher_dir) -I$(argon2_dir) -I$(aes_dir) @CPPFLAGS@ @SHOBJCPPFLAGS@ @DEFS@ @TCL_DEFS@
 LDFLAGS       := @LDFLAGS@
 LIBS          := @LIBS@
 SHOBJLDFLAGS  := @SHOBJLDFLAGS@
@@ -25,8 +26,8 @@ export CC CFLAGS CPPFLAGS
 all: @EXTENSION_TARGET@ pkgIndex.tcl
 
 ifeq (@TCLEXT_BUILD@,shared)
-@EXTENSION_TARGET@: monocypher.o argon2.o randombytes.o nano.o Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o randombytes.o monocypher.o argon2.o $(LIBS)
+@EXTENSION_TARGET@: monocypher.o argon2.o aes.o randombytes.o nano.o Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o randombytes.o monocypher.o argon2.o aes.o $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
@@ -39,14 +40,14 @@ endif
 
 # The amalgamation is used when compiling statically so that the same ABI can be exposed
 # to upstream projects rather than requiring them to filter out our symbols
-nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)monocypher.c $(argon2_dir)argon2.c Makefile
+nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)monocypher.c $(argon2_dir)argon2.c $(aes_dir)aes.c Makefile
 	rm -f nano-amalgamation.c
-	cat @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)monocypher.c $(argon2_dir)argon2.c > nano-amalgamation.c
+	cat @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)monocypher.c $(argon2_dir)argon2.c $(aes_dir)aes.c > nano-amalgamation.c
 
-nano-amalgamation.o: nano-amalgamation.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
+nano-amalgamation.o: nano-amalgamation.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
 
-nano.o: @srcdir@/nano.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h @srcdir@/randombytes.h nano.tcl.h Makefile
+nano.o: @srcdir@/nano.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
 
 randombytes.o: @srcdir@/randombytes.c @srcdir@/randombytes.h
@@ -55,8 +56,11 @@ randombytes.o: @srcdir@/randombytes.c @srcdir@/randombytes.h
 monocypher.o: $(monocypher_dir)monocypher.c $(monocypher_dir)monocypher.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o monocypher.o -c $(monocypher_dir)monocypher.c
 
-argon2.o: $(argon2_dir)argon2.c $(argon2_dir)argon2.h
+argon2.o: $(argon2_dir)argon2.c $(argon2_dir)argon2.h $(monocypher_dir)monocypher.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o argon2.o -c $(argon2_dir)argon2.c
+
+aes.o: $(aes_dir)aes.c $(aes_dir)aes.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o aes.o -c $(aes_dir)aes.c
 
 pkgIndex.tcl: pkgIndex.tcl-@TCLEXT_BUILD@
 	cp pkgIndex.tcl-@TCLEXT_BUILD@ pkgIndex.tcl
@@ -88,9 +92,9 @@ install: @EXTENSION_TARGET@ pkgIndex.tcl @srcdir@/nano.man
 clean:
 	rm -f nano-amalgamation.c nano-amalgamation.o
 	rm -f @EXTENSION_TARGET@ nano.o nano.gcda nano.gcno
-	rm -f argon2.o monocypher.o randombytes.o
-	rm -f argon2.gcda monocypher.gcda randombytes.gcda
-	rm -f argon2.gcno monocypher.gcno randombytes.gcno
+	rm -f argon2.o monocypher.o aes.o randombytes.o
+	rm -f argon2.gcda monocypher.gcda aes.gcda randombytes.gcda
+	rm -f argon2.gcno monocypher.gcno aes.gcno randombytes.gcno
 	rm -f nano-coverage.info
 
 distclean: clean

@@ -1,5 +1,8 @@
 nano.so
 nano.o
+argon2.o
+monocypher.o
+aes.o
 randombytes.o
 nano.syms
 nano.vers
