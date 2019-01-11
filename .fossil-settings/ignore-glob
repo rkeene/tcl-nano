@@ -1,8 +1,9 @@
 nano.so
 nano.o
+argon2.o
+monocypher.o
+aes.o
 randombytes.o
-blake2b.o
-tweetnacl.o
 nano.syms
 nano.vers
 nano.tcl.h
@@ -17,11 +18,8 @@ configure
 install-sh
 config.log
 config.status
-tweetnacl
-build/tweetnacl/out
-build/tweetnacl/INST
-blake2b
-build/blake2b/out
-build/blake2b/INST
+vendor/argon2
+build/argon2/out
+build/argon2/INST
 build/work
 build/tcl
