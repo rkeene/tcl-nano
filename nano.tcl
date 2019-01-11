@@ -4098,7 +4098,6 @@ proc ::nano::wallet::decode_backup {password walletJSON} {
 		return -code error "Unsupported wallet backup version ($version)"
 	}
 
-	set password ""
 	set walletKeyIV [string range $wallet(salt) 0 15]
 	set seedIV      [string range $wallet(salt) 16 end]
 
