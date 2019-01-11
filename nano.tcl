@@ -4101,6 +4101,8 @@ proc ::nano::wallet::decode_backup {password walletJSON} {
 	set walletKeyIV [string range $wallet(salt) 0 15]
 	set seedIV      [string range $wallet(salt) 16 end]
 
+	# XXX:TODO: Check the password against "check"
+
 	# Decrypt seed
 	set aesKey    [::nano::internal::deriveKeyFromPassword $password $wallet(salt)]
 	set walletKey [::nano::internal::AES256-CTR $aesKey $walletKeyIV $wallet(key)]
