@@ -4,11 +4,12 @@ all: out/argon2.c out/argon2.h
 
 src-patched/argon2.c src-patched/argon2.h src-patched/blake2b.c src-patched/blamka-round-ref.h src-patched/core.c src-patched/core.h src-patched/encoding.c src-patched/encoding.h src-patched/ref.c: src-patched Makefile
 
-src-patched: src/argon2.c src/argon2.h src/blake2b.c src/blamka-round-ref.h src/core.c src/core.h src/encoding.c src/encoding.h src/ref.c patches/argon2-20181109-tclamalgamation.diff Makefile
+src-patched: src/argon2.c src/argon2.h src/blake2b.c src/blamka-round-ref.h src/core.c src/core.h src/encoding.c src/encoding.h src/ref.c patches/argon2-20181109-tclamalgamation.diff patches/argon2-20181109-noencoding.diff Makefile
 	rm -rf src-patched src-patched.new
 	mkdir src-patched.new
 	cp $^ src-patched.new/
 	cd src-patched.new && patch --batch --posix -p1 < ../patches/argon2-20181109-tclamalgamation.diff
+	cd src-patched.new && patch --batch --posix -p1 < ../patches/argon2-20181109-noencoding.diff
 	mv src-patched.new src-patched
 
 out/argon2.c: src-patched/argon2.c src-patched/ref.c src-patched/core.c src-patched/blake2b.c src-patched/encoding.c monocypher-blake2b.h Makefile

@@ -1,0 +1,83 @@
+diff -uNr a/argon2.c b/argon2.c
+--- a/argon2.c	2019-01-11 10:45:44.193444670 -0600
++++ b/argon2.c	2019-01-11 12:01:03.325362284 -0600
+@@ -163,12 +163,16 @@
+ 
+     /* if encoding requested, write it */
+     if (encoded && encodedlen) {
++        clear_internal_memory(out, hashlen);
++        free(out);
++        return ARGON2_ENCODING_FAIL;
++#if 0
+         if (encode_string(encoded, encodedlen, &context, type) != ARGON2_OK) {
+             clear_internal_memory(out, hashlen); /* wipe buffers if error */
+             clear_internal_memory(encoded, encodedlen);
+             free(out);
+-            return ARGON2_ENCODING_FAIL;
+         }
++#endif
+     }
+     clear_internal_memory(out, hashlen);
+     free(out);
+@@ -246,6 +250,7 @@
+     return (int)((1 & ((d - 1) >> 8)) - 1);
+ }
+ 
++#if 0
+ int argon2_verify(const char *encoded, const void *pwd, const size_t pwdlen,
+                   argon2_type type) {
+ 
+@@ -326,6 +331,7 @@
+ 
+     return argon2_verify(encoded, pwd, pwdlen, Argon2_id);
+ }
++#endif
+ 
+ int argon2d_ctx(argon2_context *context) {
+     return argon2_ctx(context, Argon2_d);
+@@ -444,9 +450,11 @@
+     }
+ }
+ 
++#if 0
+ size_t argon2_encodedlen(uint32_t t_cost, uint32_t m_cost, uint32_t parallelism,
+                          uint32_t saltlen, uint32_t hashlen, argon2_type type) {
+   return strlen("$$v=$m=,t=,p=$$") + strlen(argon2_type2string(type, 0)) +
+          numlen(t_cost) + numlen(m_cost) + numlen(parallelism) +
+          b64len(saltlen) + b64len(hashlen) + numlen(ARGON2_VERSION_NUMBER) + 1;
+ }
++#endif
+diff -uNr a/encoding.c b/encoding.c
+--- a/encoding.c	2019-01-11 10:45:44.195444669 -0600
++++ b/encoding.c	2019-01-11 12:01:35.466361698 -0600
+@@ -15,6 +15,8 @@
+  * software. If not, they may be obtained at the above URLs.
+  */
+ 
++#if 0
++
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -461,3 +463,4 @@
+     return len;
+ }
+ 
++#endif
+diff -uNr a/encoding.h b/encoding.h
+--- a/encoding.h	2019-01-11 10:45:44.196444669 -0600
++++ b/encoding.h	2019-01-11 12:02:49.941360340 -0600
+@@ -19,6 +19,7 @@
+ #define ENCODING_H
+ #include "argon2.h"
+ 
++#if 0
+ #define ARGON2_MAX_DECODED_LANES UINT32_C(255)
+ #define ARGON2_MIN_DECODED_SALT_LEN UINT32_C(8)
+ #define ARGON2_MIN_DECODED_OUT_LEN UINT32_C(12)
+@@ -55,3 +56,5 @@
+ size_t numlen(uint32_t num);
+ 
+ #endif
++
++#endif
