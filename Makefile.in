@@ -46,7 +46,7 @@ nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)mon
 	cat @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)monocypher.c $(argon2_dir)argon2.c $(aes_dir)aes.c > nano-amalgamation.c
 
 nano-amalgamation.o: nano-amalgamation.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
+	$(CC) $(CPPFLAGS) -DTCL_NANO_AMALGAMATION=1 $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
 
 nano.o: @srcdir@/nano.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
