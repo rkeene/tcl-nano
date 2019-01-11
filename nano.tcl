@@ -30,6 +30,7 @@ namespace eval ::nano::protocol::create {}
 namespace eval ::nano::protocol::parse {}
 namespace eval ::nano::protocol::extensions {}
 namespace eval ::nano::network::_dns {}
+namespace eval ::nano::wallet {}
 namespace eval ::nano::_cli {}
 
 # Constants
@@ -4079,6 +4080,39 @@ proc ::nano::_cli::multiword {namespace baseCommand args} {
 
 proc {::nano::_cli::multiword help} {namespace base args} {
 	tailcall help $namespace $base {*}$args
+}
+
+# Node Wallet Functions
+proc ::nano::wallet::decode_backup {password walletJSON} {
+	array set walletArray [::json::json2dict $walletJSON]
+
+	set wallet(version) [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000000)]
+	set wallet(salt)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000001)]
+	set wallet(key)     [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000002)]
+	set wallet(check)   [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000003)]
+	set wallet(rep)     [::nano::address::fromPublicKey $walletArray(0000000000000000000000000000000000000000000000000000000000000004)]
+	set wallet(seed)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000005)]
+	set wallet(index)   [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000006)]
+
+	if {$wallet(version) != 4} {
+		return -code error "Unsupported wallet backup version ($version)"
+	}
+
+	set password ""
+	set walletKeyIV [string range $wallet(salt) 0 15]
+	set seedIV      [string range $wallet(salt) 16 end]
+
+	# Decrypt seed
+	set aesKey    [::nano::internal::deriveKeyFromPassword $password $wallet(salt)]
+	set walletKey [::nano::internal::AES256-CTR $aesKey $walletKeyIV $wallet(key)]
+	set seed      [::nano::internal::AES256-CTR $walletKey $seedIV $wallet(seed)]
+
+	# Format results
+	set wallet(seed) [string toupper [binary encode hex $seed]]
+
+	# XXX:TODO: Include ad-hoc keys
+
+	return [array get wallet]
 }
 
 # Node CLI
