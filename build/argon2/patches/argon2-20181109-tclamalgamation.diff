@@ -1,0 +1,57 @@
+diff -uNr a/blake2b.c b/blake2b.c
+--- a/blake2b.c	2019-01-11 10:45:44.194444669 -0600
++++ b/blake2b.c	2019-01-11 11:31:06.584395039 -0600
+@@ -185,6 +185,7 @@
+     v[14] = blake2b_IV[6] ^ S->f[0];
+     v[15] = blake2b_IV[7] ^ S->f[1];
+ 
++#ifndef TCL_NANO_AMALGAMATION
+ #define G(r, i, a, b, c, d)                                                    \
+     do {                                                                       \
+         a = a + b + m[blake2b_sigma[r][2 * i + 0]];                            \
+@@ -196,6 +197,7 @@
+         c = c + d;                                                             \
+         b = rotr64(b ^ c, 63);                                                 \
+     } while ((void)0, 0)
++#endif
+ 
+ #define ROUND(r)                                                               \
+     do {                                                                       \
+diff -uNr a/blamka-round-ref.h b/blamka-round-ref.h
+--- a/blamka-round-ref.h	2019-01-11 10:45:44.194444669 -0600
++++ b/blamka-round-ref.h	2019-01-11 11:31:15.166394883 -0600
+@@ -22,6 +22,7 @@
+ #include "blake2-impl.h"
+ 
+ /* designed by the Lyra PHC team */
++#ifndef TCL_NANO_AMALGAMATION
+ static BLAKE2_INLINE uint64_t fBlaMka(uint64_t x, uint64_t y) {
+     const uint64_t m = UINT64_C(0xFFFFFFFF);
+     const uint64_t xy = (x & m) * (y & m);
+@@ -39,6 +40,7 @@
+         c = fBlaMka(c, d);                                                     \
+         b = rotr64(b ^ c, 63);                                                 \
+     } while ((void)0, 0)
++#endif
+ 
+ #define BLAKE2_ROUND_NOMSG(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11,   \
+                            v12, v13, v14, v15)                                 \
+diff -uNr a/core.c b/core.c
+--- a/core.c	2019-01-11 10:45:44.194444669 -0600
++++ b/core.c	2019-01-11 11:31:06.586395039 -0600
+@@ -56,6 +56,7 @@
+ /***************Instance and Position constructors**********/
+ void init_block_value(block *b, uint8_t in) { memset(b->v, in, sizeof(b->v)); }
+ 
++#ifndef TCL_NANO_AMALGAMATION
+ void copy_block(block *dst, const block *src) {
+     memcpy(dst->v, src->v, sizeof(uint64_t) * ARGON2_QWORDS_IN_BLOCK);
+ }
+@@ -80,6 +81,7 @@
+         store64((uint8_t *)output + i * sizeof(src->v[i]), src->v[i]);
+     }
+ }
++#endif
+ 
+ /***************Memory functions*****************/
+ 

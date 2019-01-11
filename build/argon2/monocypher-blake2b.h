@@ -4,12 +4,15 @@
 #define blake2b_init(ctx, outlen) 0; crypto_blake2b_general_init(ctx, outlen, NULL, 0)
 #define blake2b_update(ctx, in, inlen) 0; crypto_blake2b_update(ctx, in, inlen)
 #define blake2b_final(ctx, out, ignore1) 0; crypto_blake2b_final(ctx, out)
-#define BLAKE2_INLINE
-#define BLAKE2B_OUTBYTES 64
+#ifndef BLAKE2_INLINE
+#  define BLAKE2_INLINE
+#endif
+#ifndef BLAKE2B_OUTBYTES
+#  define BLAKE2B_OUTBYTES 64
+#endif
 #include <stdint.h>
 #include <tcl.h>
 #include "monocypher.h"
-static BLAKE2_INLINE uint64_t rotr64(uint64_t x, uint64_t n) { return (x >> n) ^ (x << (64 - n)); }
 static BLAKE2_INLINE void store32( void *dst, uint32_t w )
 {
 #if defined(NATIVE_LITTLE_ENDIAN)
@@ -22,6 +25,9 @@ static BLAKE2_INLINE void store32( void *dst, uint32_t w )
   p[3] = (uint8_t)(w >> 24);
 #endif
 }
+
+#ifndef TCL_NANO_AMALGAMATION
+static BLAKE2_INLINE uint64_t rotr64(uint64_t x, uint64_t n) { return (x >> n) ^ (x << (64 - n)); }
 
 static BLAKE2_INLINE void store64( void *dst, uint64_t w )
 {
@@ -58,4 +64,4 @@ static BLAKE2_INLINE uint64_t load64( const void *src )
          (( uint64_t )( p[7] ) << 56) ;
 #endif
 }
-
+#endif

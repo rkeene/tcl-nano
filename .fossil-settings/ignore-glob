@@ -20,6 +20,8 @@ config.log
 config.status
 vendor/argon2
 build/argon2/out
+build/argon2/src-patched
+build/argon2/src-patched.new
 build/argon2/INST
 build/work
 build/tcl
