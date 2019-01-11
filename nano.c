@@ -14,6 +14,7 @@
 #include "randombytes.h"
 #include "monocypher.h"
 #include "argon2.h"
+#include "aes.h"
 
 #define NANO_SECRET_KEY_LENGTH 32
 #define NANO_PUBLIC_KEY_LENGTH 32
@@ -320,6 +321,53 @@ static int nano_tcl_derive_key_from_password(ClientData clientData, Tcl_Interp *
 	clientData = clientData;
 }
 
+static int nano_tcl_aes256_ctr(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	struct AES_ctx aes_handle;
+	void *key, *iv, *data;
+	int key_length, iv_length, data_length;
+	unsigned char result[128];
+
+	if (objc != 4) {
+		Tcl_WrongNumArgs(interp, 1, objv, "key iv data");
+
+		return(TCL_ERROR);
+	}
+
+	key  = Tcl_GetByteArrayFromObj(objv[1], &key_length);
+	iv   = Tcl_GetByteArrayFromObj(objv[2], &iv_length);
+	data = Tcl_GetByteArrayFromObj(objv[3], &data_length);
+
+	if (key_length != AES_KEYLEN) {
+		Tcl_SetResult(interp, "Key is not the right size", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	if (iv_length != AES_BLOCKLEN) {
+		Tcl_SetResult(interp, "IV is not the right size", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	if (data_length > sizeof(result)) {
+		Tcl_SetResult(interp, "Data exceeds maximum size", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	memcpy(result, data, data_length);
+
+	AES_init_ctx_iv(&aes_handle, key, iv);
+	AES_CTR_xcrypt_buffer(&aes_handle, result, data_length);
+
+	Tcl_SetObjResult(interp, Tcl_NewByteArrayObj(result, AES_KEYLEN));
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+
 static int nano_tcl_hash_data(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	unsigned char *data, result[NANO_BLOCK_SIGNATURE_LENGTH];
 	int tgifo_ret;
@@ -611,6 +659,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	TclNano_CreateObjCommand(interp, "::nano::internal::verifyDetached", nano_tcl_verify_detached);
 	TclNano_CreateObjCommand(interp, "::nano::internal::hashData", nano_tcl_hash_data);
 	TclNano_CreateObjCommand(interp, "::nano::internal::deriveKeyFromPassword", nano_tcl_derive_key_from_password);
+	TclNano_CreateObjCommand(interp, "::nano::internal::AES256-CTR", nano_tcl_aes256_ctr);
 	TclNano_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::randomBytes", nano_tcl_random_bytes);
