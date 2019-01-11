@@ -87,11 +87,12 @@ endif
 install: @EXTENSION_TARGET@ @srcdir@/bin/node @srcdir@/bin/rpc-client pkgIndex.tcl @srcdir@/nano.man
 	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
 	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)/bin'
+	$(INSTALL) -d '$(DESTDIR)$(PACKAGE_INSTALL_DIR)/man'
 	$(INSTALL_PROGRAM) @EXTENSION_TARGET@ '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
 	$(INSTALL_PROGRAM) @srcdir@/bin/node '$(DESTDIR)$(PACKAGE_INSTALL_DIR)/bin'
 	$(INSTALL_PROGRAM) @srcdir@/bin/rpc-client '$(DESTDIR)$(PACKAGE_INSTALL_DIR)/bin'
 	$(INSTALL_DATA)    pkgIndex.tcl '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
-	$(INSTALL_DATA)    @srcdir@/nano.man '$(DESTDIR)$(PACKAGE_INSTALL_DIR)'
+	$(INSTALL_DATA)    @srcdir@/nano.man '$(DESTDIR)$(PACKAGE_INSTALL_DIR)/man'
  
 clean:
 	rm -f nano-amalgamation.c nano-amalgamation.o
