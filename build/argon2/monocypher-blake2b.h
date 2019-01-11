@@ -7,6 +7,7 @@
 #define BLAKE2_INLINE
 #define BLAKE2B_OUTBYTES 64
 #include <stdint.h>
+#include <tcl.h>
 #include "monocypher.h"
 static BLAKE2_INLINE uint64_t rotr64(uint64_t x, uint64_t n) { return (x >> n) ^ (x << (64 - n)); }
 static BLAKE2_INLINE void store32( void *dst, uint32_t w )
