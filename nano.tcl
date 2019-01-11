@@ -3034,8 +3034,7 @@ proc ::nano::network::_dns::toIPList {name} {
 	return $retval
 }
 
-# XXX:TODO: Which namespace should this go in ?
-proc ::nano::node::_randomSortList {args} {
+proc ::nano::internal::randomSortList {args} {
 	set list [lindex $args end]
 	set args [lrange $args 0 end-1]
 	set salt [expr {rand()}]
@@ -3275,7 +3274,7 @@ proc ::nano::node::getPeers {} {
 		lappend completePeers $peerKey
 	}
 
-	set retval [::nano::node::_randomSortList -unique $completePeers]
+	set retval [::nano::internal::randomSortList -unique $completePeers]
 
 	return $retval
 }
