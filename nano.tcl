@@ -347,8 +347,16 @@ proc ::nano::key::publicKeyFromPrivateKey {privateKey args} {
 }
 
 # Low-level block management
-proc ::nano::block::dict::toBlock {blockDict} {
+proc ::nano::block::dict::toBlock {blockDict args} {
 	array set block $blockDict
+
+	set blockData ""
+
+	# Include type if requested
+	set field "-type"
+	if {[lsearch -exact $args $field] != -1} {
+		append blockData [binary format c [lsearch -exact $::nano::block::blockTypes $block(type)]]
+	}
 
 	switch -- $block(type) {
 		"state" {
@@ -385,12 +393,72 @@ proc ::nano::block::dict::toBlock {blockDict} {
 		}
 	}
 
+	foreach field {-work -signature} {
+		if {[lsearch -exact $args $field] == -1} {
+			# It makes no sense to miss an intermediate field, so if
+			# one of them is excluded, stop processing further fields
+			break
+		}
+
+		set field [string trim $field "-"]
+		set value $block($field)
+
+		switch -exact -- $field {
+			"work" {
+				if {[string length $value] != $::nano::work::workValueLength} {
+					if {$block(type) eq "state"} {
+						set value [binary format W $value]
+					} else {
+						set value [binary format w $value]
+					}
+				}
+			}
+			"signature" {
+				if {[string length $value] != $::nano::block::signatureLength} {
+					set value [binary decode hex $value]
+				}
+			}
+		}
+
+		append blockData $value
+	}
+
 	return $blockData
 }
 
 proc ::nano::block::json::toBlock {blockJSON} {
 	set blockDict [::nano::block::dict::fromJSON $blockJSON]
 	tailcall ::nano::block::dict::toBlock $blockDict
+}
+
+proc ::nano::block::dict::_addWorkData {blockDict} {
+	# Do nothing if this is already set
+	if {[dict exists $blockDict _workData]} {
+		return $blockDict
+	}
+
+	# Parse out the work data
+	if {[dict get $blockDict "type"] in {send receive change state}} {
+		set workDataBasedOn "previous"
+	}
+
+	if {[dict get $blockDict "type"] eq "state" && [dict get $blockDict "previous"] eq $::nano::block::zero && [dict get $blockDict "link"] ne $::nano::block::zero} {
+		set workDataBasedOn "account"
+	}
+
+	if {[dict get $blockDict "type"] eq "open"} {
+		set workDataBasedOn "account"
+	}
+
+	if {[info exists workDataBasedOn]} {
+		if {$workDataBasedOn eq "previous"} {
+			dict set blockDict "_workData" [dict get $blockDict "previous"]
+		} else {
+			dict set blockDict "_workData" [::nano::address::toPublicKey [dict get $blockDict "account"]]
+		}
+	}
+
+	return $blockDict
 }
 
 proc ::nano::block::dict::fromJSON {blockJSON} {
@@ -402,26 +470,7 @@ proc ::nano::block::dict::fromJSON {blockJSON} {
 		dict set retval "balance" $balance
 	}
 
-	# Parse out the work data
-	if {[dict get $retval "type"] in {send receive change state}} {
-		set workDataBasedOn "previous"
-	}
-
-	if {[dict get $retval "type"] eq "state" && [dict get $retval "previous"] eq $::nano::block::zero && [dict get $retval "link"] eq $::nano::block::zero} {
-		set workDataBasedOn "account"
-	}
-
-	if {[dict get $retval "type"] eq "open"} {
-		set workDataBasedOn "account"
-	}
-
-	if {[info exists workDataBasedOn]} {
-		if {$workDataBasedOn eq "previous"} {
-			dict set retval "_workData" [dict get $retval "previous"]
-		} else {
-			dict set retval "_workData" [::nano::address::toPublicKey [dict get $retval "account"]]
-		}
-	}
+	set retval [::nano::block::dict::_addWorkData $retval]
 
 	return $retval
 }
@@ -694,7 +743,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 
 	switch -- $block(type) {
 		"state" {
-			binary scan $blockData a32H64a32H32H64H128H16 \
+			binary scan $blockData a32H64a32H32H64H128Wu \
 				block(account) \
 				block(previous) \
 				block(representative) \
@@ -704,7 +753,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 				block(work)
 		}
 		"open" {
-			binary scan $blockData H64a32a32H128H16 \
+			binary scan $blockData H64a32a32H128wu \
 				block(source) \
 				block(representative) \
 				block(account) \
@@ -714,7 +763,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 			set block(_workData) $block(account)
 		}
 		"send" {
-			binary scan $blockData H64a32H32H128H16 \
+			binary scan $blockData H64a32H32H128wu \
 				block(previous) \
 				block(destination) \
 				block(balance) \
@@ -724,7 +773,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 			set block(_workData) $block(previous)
 		}
 		"receive" {
-			binary scan $blockData H64H64H128H16 \
+			binary scan $blockData H64H64H128wu \
 				block(previous) \
 				block(source) \
 				block(signature) \
@@ -733,7 +782,7 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 			set block(_workData) $block(previous)
 		}
 		"change" {
-			binary scan $blockData H64a32H128H16 \
+			binary scan $blockData H64a32H128wu \
 				block(previous) \
 				block(representative) \
 				block(signature) \
@@ -757,6 +806,9 @@ proc ::nano::block::dict::fromBlock {blockData args} {
 			}
 			"balance" {
 				set block($field) [format %lli "0x$block($field)"]
+			}
+			"work" {
+				set block($field) [format %016llx $block($field)]
 			}
 		}
 	}
@@ -980,8 +1032,15 @@ proc ::nano::block::json::sign {blockJSON privateKey args} {
 	return $retval
 }
 
-proc ::nano::block::dict::verifySignature {blockDict} {
-	set publicKey [::nano::address::toPublicKey [dict get $blockDict account]]
+proc ::nano::block::dict::verifySignature {blockDict {publicKey ""}} {
+	if {$publicKey eq ""} {
+		if {![dict exists $blockDict "account"]} {
+			error "Account or public key must be specified"
+		} else {
+			set publicKey [::nano::address::toPublicKey [dict get $blockDict account]]
+		}
+	}
+
 	set signature [dict get $blockDict signature]
 
 	set blockDict [_addBlockHash $blockDict]
@@ -1021,6 +1080,7 @@ proc ::nano::block::dict::work {blockDict args} {
 	}
 
 	set blockDict [_addBlockHash $blockDict]
+	set blockDict [_addWorkData $blockDict]
 
 	set blockHash [dict get $blockDict _workData]
 
@@ -1071,6 +1131,7 @@ proc ::nano::block::json::work {blockJSON args} {
 
 proc ::nano::block::dict::validateWork {blockDict} {
 	set blockDict [_addBlockHash $blockDict]
+	set blockDict [_addWorkData $blockDict]
 
 	set blockHash [dict get $blockDict _workData]
 	set work      [dict get $blockDict work]
@@ -1109,6 +1170,23 @@ proc ::nano::block::dict::genesis {network} {
 	return $::nano::block::dict::genesis($network)
 }
 
+proc ::nano::block::dict::printable {blockDict} {
+	dict for {key value} $blockDict {
+		switch -exact -- $key {
+			"_workData" {
+				if {[string length $value] == $::nano::block::hashLength} {
+					set value [binary encode hex $value]
+					dict set blockDict $key $value
+				}
+			}
+		}
+	}
+
+	dict unset blockDict _blockData
+
+	return $blockDict
+}
+
 #   send from <account> to <account> previousBalance <balance>
 #        amount <amount> sourceBlock <sourceBlockHash>
 #        previous <previousBlockHash> ?representative <representative>?
@@ -1120,16 +1198,26 @@ proc ::nano::block::create::send {args} {
 
 	set block(balance) [expr {$block(previousBalance) - $block(amount)}]
 
-	set blockDict [dict create \
-		"type" state \
-		"account" $block(from) \
-		"previous" $block(previous) \
-		"representative" $block(representative) \
-		"balance" $block(balance) \
-		"link_as_account" $block(to) \
-		"_workData" $block(previous) \
-		"_comment" "Send $block(amount) raw from $block(from) to $block(to)" \
-	]
+	if {[info exists block(-legacy)] && $block(-legacy)} {
+		set blockDict [dict create \
+			"type" send \
+			"previous" $block(previous) \
+			"balance" $block(balance) \
+			"_workData" $block(previous) \
+			"_comment" "Legacy send $block(amount) raw from $block(from) to $block(to)" \
+		]
+	} else {
+		set blockDict [dict create \
+			"type" state \
+			"account" $block(from) \
+			"previous" $block(previous) \
+			"representative" $block(representative) \
+			"balance" $block(balance) \
+			"link_as_account" $block(to) \
+			"_workData" $block(previous) \
+			"_comment" "Send $block(amount) raw from $block(from) to $block(to)" \
+		]
+	}
 
 	if {[info exists block(signKey)]} {
 		set blockDict [::nano::block::dict::sign $blockDict $block(signKey) -update]
@@ -1154,25 +1242,48 @@ proc ::nano::block::create::receive {args} {
 	}
 
 	if {![info exists block(previous)]} {
+		set isOpen true
 		set block(previous) $::nano::block::zero
 		set block(previousBalance) 0
 		set block(_workData) [::nano::address::toPublicKey $block(to) -hex]
 	} else {
+		set isOpen false
 		set block(_workData) $block(previous)
 	}
 
 	set block(balance) [expr {$block(previousBalance) + $block(amount)}]
 
-	set blockDict [dict create \
-		"type" state \
-		"account" $block(to) \
-		"previous" $block(previous) \
-		"representative" $block(representative) \
-		"balance" $block(balance) \
-		"link" $block(sourceBlock) \
-		"_workData" $block(_workData) \
-		"_comment" "Receive $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
-	]
+	if {[info exists block(-legacy)] && $block(-legacy)} {
+		if {$isOpen} {
+			set blockDict [dict create \
+				"type" open \
+				"account" $block(to) \
+				"representative" $block(representative) \
+				"source" $block(sourceBlock) \
+				"_workData" $block(_workData) \
+				"_comment" "Legacy open + receive of $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
+			]
+		} else {
+			set blockDict [dict create \
+				"type" receive \
+				"source" $block(sourceBlock) \
+				"previous" $block(previous) \
+				"_workData" $block(_workData) \
+				"_comment" "Legacy receive $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
+			]
+		}
+	} else {
+		set blockDict [dict create \
+			"type" state \
+			"account" $block(to) \
+			"previous" $block(previous) \
+			"representative" $block(representative) \
+			"balance" $block(balance) \
+			"link" $block(sourceBlock) \
+			"_workData" $block(_workData) \
+			"_comment" "Receive $block(amount) raw on $block(to) from hash $block(sourceBlock)" \
+		]
+	}
 
 	if {[info exists block(signKey)]} {
 		set blockDict [::nano::block::dict::sign $blockDict $block(signKey) -update]
@@ -2426,12 +2537,8 @@ proc ::nano::protocol::parse::confirm_req {extensions blockData} {
 	set blockDict [::nano::block::dict::fromBlock $blockData -type=$blockType]
 	set blockHash [::nano::block::dict::toHash $blockDict -hex]
 
-	# XXX:TEMPORARY
-	dict unset blockDict _blockData
-	dict unset blockDict _workData
-
 	set retval(blockType) $blockType
-	set retval(block) $blockDict
+	set retval(block) [::nano::block::dict::printable $blockDict]
 	set retval(hash) $blockHash
 
 	return [array get retval]
@@ -2442,7 +2549,7 @@ proc ::nano::protocol::parse::confirm_ack {extensions blockData} {
 	set blockType [::nano::block::typeFromTypeID $blockTypeID]
 
 	# Header
-	binary scan $blockData H64H128wa* \
+	binary scan $blockData H64H128wua* \
 		retval(voteAccount) \
 		retval(voteSignature) \
 		retval(voteSequence) \
@@ -2478,13 +2585,9 @@ proc ::nano::protocol::parse::confirm_ack {extensions blockData} {
 		set blockHash [::nano::block::dict::toHash $blockDict -hex]
 		append signedData [binary decode hex $blockHash]
 
-		# XXX:TEMPORARY
-		dict unset blockDict _blockData
-		dict unset blockDict _workData
-
 		set retval(blockType) $blockType
 		set retval(hashes) [list $blockHash]
-		set retval(block) $blockDict
+		set retval(block) [::nano::block::dict::printable $blockDict]
 	}
 
 	# Add the sequence number to the signed data
@@ -2524,8 +2627,8 @@ proc ::nano::protocol::parse::confirm_ack {extensions blockData} {
 }
 
 proc ::nano::protocol::create {network messageType args} {
-	set versionUsing 14
-	set versionMin 13
+	set versionUsing 15
+	set versionMin 14
 	set versionMax $versionUsing
 	set messageInfo(extensions) 0
 	set messageInfo(blockType) 0
@@ -3236,6 +3339,14 @@ proc ::nano::network::server::keepalive {messageDict} {
 		}
 	}
 
+	# Stats
+	incr ::nano::node::stats([list keepalive count])
+	incr ::nano::node::stats([list keepalive peers]) [llength $peers]
+	foreach peer $peers {
+		set ::nano::node::_stats_seen_hashes([list keepalive $peer]) 1
+	}
+	set ::nano::node::stats([list keepalive peersUnique]) [llength [array names ::nano::node::_stats_seen_hashes [list keepalive *]]]
+
 	return ""
 }
 
@@ -3263,6 +3374,9 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		set query [dict get $messageDict query]
 		set clientID [dict get $::nano::node::configuration node client_id_private_key]
 		set retval [dict create "invoke_client" [list node_id_handshake response -privateKey $clientID -query [binary decode hex $query]]]
+
+		# Stats
+		incr ::nano::node::stats([list node_id_handshake query count])
 	}
 
 	if {"response" in [dict get $messageDict flags]} {
@@ -3281,9 +3395,19 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		# Add the peer to our list of peers
 #puts "Got node_id_handshake response from $peer"
 		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
+
+		# Stats
+		incr ::nano::node::stats([list node_id_handshake response count])
+		set ::nano::node::_stats_seen_hashes([list node_id_handshake [dict get $messageDict key]]) 1
+		set ::nano::node::stats([list node_id_handshake response uniqueKeys]) [llength [array names ::nano::node::_stats_seen_hashes [list node_id_handshake *]]]
 	}
 
 	return $retval
+}
+
+proc ::nano::network::server::confirm_req {messageDict} {
+	incr ::nano::node::stats([list confirm_req])
+	return ""
 }
 
 proc ::nano::network::server::confirm_ack {messageDict} {
@@ -3338,29 +3462,50 @@ proc ::nano::protocol::parse::publish {extensions messageData} {
 	set blockDict [::nano::block::dict::fromBlock $messageData -type=$blockType]
 	set blockHash [::nano::block::dict::toHash $blockDict -hex]
 
-	# XXX:TEMPORARY
-	dict unset blockDict _blockData
-	dict unset blockDict _workData
-
 	set retval(blockType) $blockType
-	set retval(block) $blockDict
+	set retval(block) [::nano::block::dict::printable $blockDict]
 	set retval(hash) $blockHash
 
 	return [array get retval]
+}
+
+proc ::nano::internal::boolean {value} {
+	if {$value} {
+		return true
+	} else {
+		return false
+	}
 }
 
 proc ::nano::network::server::publish {messageDict} {
 	#puts "block: [binary encode hex $blockData]"
 #9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036f4e1ff833324efc81c237776242928ef76a2cdfaa53f4c4530ee39bfff1977e26e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fc492fd20e57d048e000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465169006f988549a8b1e20e0a09b4b4dcae5397f6fcc4d507675f58c2b29ae02341b0a4fe562201a61bf27481aa4567c287136b4fd26b4840c93c42c7d1f5c518503d68ec561af4b8cf8
 #9e1272edade3c247c738a4bd303eb0cfc3da298444bb9d13b8ffbced34ff036fa5e3647d3d296ec72baea013ba7fa1bf5c3357c33c90196f078ba091295e6e03e382dd09ec8cafc2427cf817e9afe1f372ce81085ab4feb1f3de1f25ee818e5d000000008fb2604ebd1fe098b8000000204e7a62f25df739eaa224d403cb107b3f9caa0280113b0328fad3b402c465165287cd9c61752dc9d011f666534dbdc10461e927503f9599791d73b1cca7fdc032d76db3f91e5b5c3d6206fa48b01bd08da4a89f2e880242e9917cfc3db80d0b9bfe8e6d1dd183d5
-	# XXX:TODO: Validate
-	set valid true
-	incr ::nano::node::stats([list publish valid $valid])
-
+if {[catch {
 	set hash [dict get $messageDict hash]
+	set block [dict get $messageDict block]
+	switch -exact -- [dict get $block type] {
+		"send" - "receive" - "change" {
+			set valid maybe
+		}
+		"open" - "state" {
+			set valid false
+		}
+	}
+	catch {
+		set valid [::nano::internal::boolean [::nano::block::dict::verifySignature $block]]
+	}
+	set validWork [::nano::internal::boolean [::nano::block::dict::validateWork $block]]
+
+
+	incr ::nano::node::stats([list publish valid $valid])
+	incr ::nano::node::stats([list publish validWork $validWork])
+	incr ::nano::node::stats([list publish type [dict get $block type]])
+
 	set ::nano::node::_stats_seen_hashes([list publish $hash]) 1
 
 	set ::nano::node::stats([list publish unique]) [llength [array names ::nano::node::_stats_seen_hashes [list publish *]]]
+}]} { puts $::errorInfo }
 
 	return ""
 }
@@ -3618,9 +3763,32 @@ proc ::nano::rpc::client {action args} {
 
 	set rpcURL [dict get $::nano::rpc::client::config "-url"]
 
+	switch -exact -- $action {
+		"version" - "block" {
+			set timeout 1000
+		}
+	}
+
+	set timeoutArgs [list]
+	if {[info exists timeout]} {
+		lappend timeoutArgs -timeout $timeout
+	}
+
 	set jsonArgs [list]
+	set outputFormat "dict"
 	foreach {key value} $args {
 		switch -exact -- $key {
+			"-outputformat" {
+				switch -exact -- $value {
+					"dict" - "json" {
+						set outputFormat $value
+					}
+					default {
+						error "Invalid output format: $value"
+					}
+				}
+				continue
+			}
 			"-count" {}
 			"-accounts" {
 				set valueAsStrings [lmap valueItem $value { json::write string $valueItem }]
@@ -3638,7 +3806,7 @@ proc ::nano::rpc::client {action args} {
 	set query [json::write object action [json::write string $action] {*}$jsonArgs]
 
 	catch {
-		set token [http::geturl $rpcURL -query $query]
+		set token [http::geturl $rpcURL -query $query {*}$timeoutArgs]
 		set ncode [http::ncode $token]
 		set data [http::data $token]
 	} error
@@ -3655,7 +3823,9 @@ proc ::nano::rpc::client {action args} {
 		return -code error "$ncode: $data"
 	}
 
-	set data [json::json2dict $data]
+	if {$outputFormat eq "dict"} {
+		set data [json::json2dict $data]
+	}
 
 	return $data
 }
@@ -3944,15 +4114,35 @@ proc {::nano::node::cli::show logs} args {
 	return [join [lrange $::nano::node::log end-19 end] "\n"]
 }
 
+proc {::nano::node::cli::clear stats} args {
+	set ::nano::node::statsStartTime [clock seconds]
+
+	unset -nocomplain ::nano::node::stats
+	unset -nocomplain ::nano::node::_stats_seen_hashes
+	unset -nocomplain ::nano::node::_stats_seen_hashes_by_rep
+
+	return
+}
+
+proc {::nano::node::cli::clear peers} args {
+	set ::nano::node::statsStartTime [clock seconds]
+
+	unset -nocomplain ::nano::node::peers
+	array set ::nano::node::peers [list]
+
+	return
+}
+
 proc {::nano::node::cli::show stats} args {
-	if {[lindex $args 0] eq "-clear"} {
-		set ::nano::node::statsStartTime [clock seconds]
+	set now [clock seconds]
+	set statsStart $::nano::node::statsStartTime
+	set uptimeStats [expr {$now - $statsStart}]
 
-		unset -nocomplain ::nano::node::stats
-		unset -nocomplain ::nano::node::_stats_seen_hashes
-		unset -nocomplain ::nano::node::_stats_seen_hashes_by_rep
-
-		return
+	set quiet false
+	if {!$quiet} {
+		set format {%-19s: %s}
+		puts [format $format "Stats last cleared" "[::nano::_cli::interval $uptimeStats] ago"]
+		puts ""
 	}
 
 	set globalOnly false
@@ -3990,7 +4180,16 @@ proc {::nano::node::cli::show stats} args {
 	}
 
 	foreach {key val} [lsort -stride 2 -dictionary [array get localStats]] {
-		puts [format "%-${maxKeyLen}s = $val" $key $val]
+		set extra ""
+		if {![regexp { (min|max)[A-Z]} $key]} {
+			if {[string is entier -strict $val]} {
+				set valAvg [expr {($val * 1.0) / $uptimeStats}]
+				set valAvg [format %.4f $valAvg]
+				set extra " (avg: $valAvg per second)"
+			}
+		}
+
+		puts [format "%-${maxKeyLen}s = %s%s" $key $val $extra]
 	}
 
 	return
@@ -4086,6 +4285,10 @@ proc ::nano::node::cli::_pull_chain {startBlockHash {endBlockHash "genesis"}} {
 	puts "Pulled $blocksPulled blocks in [::nano::_cli::interval $delta]"
 }
 
+proc ::nano::node::cli::clear {args} {
+	tailcall ::nano::_cli::multiword node clear {*}$args
+}
+
 proc ::nano::node::cli::show {args} {
 	tailcall ::nano::_cli::multiword node show {*}$args
 }
@@ -4130,15 +4333,28 @@ proc {::nano::node::cli::config set} {args} {
 proc ::nano::rpc::cli {args} {
 	tailcall ::nano::_cli rpc -prompt {
 		if {![info exists ::nano::rpc::cli::_cached_network]} {
-			set ::nano::rpc::cli::_cached_network [{::nano::rpc::cli::show network}]
+			catch {
+				set ::nano::rpc::cli::_cached_network [{::nano::rpc::cli::show network}]
+			}
 		}
 
 		if {![info exists ::nano::rpc::cli::_cached_version]} {
-			set ::nano::rpc::cli::_cached_version [{::nano::rpc::cli::show version} -vendor]
+			catch {
+				set ::nano::rpc::cli::_cached_version [{::nano::rpc::cli::show version} -vendor]
+			}
 		}
 
-		set network $::nano::rpc::cli::_cached_network
-		set version $::nano::rpc::cli::_cached_version
+		if {[info exists ::nano::rpc::cli::_cached_network]} {
+			set network $::nano::rpc::cli::_cached_network
+		} else {
+			set network "<unknown>"
+		}
+
+		if {[info exists ::nano::rpc::cli::_cached_version]} {
+			set version $::nano::rpc::cli::_cached_version
+		} else {
+			set version "<unknown>"
+		}
 
 		return "\[$network\] nano-rpc $version> "
 	} {*}$args
@@ -4217,9 +4433,13 @@ proc {::nano::rpc::cli::show stats} args {
 
 	if {[lsearch -exact $args "-blocks"] != -1} {
 		set blockCount [::nano::rpc::client block_count]
+		set blockCountInfoCount [dict get $blockCount count]
+		set blockCountInfoUnchecked [dict get $blockCount unchecked]
+		set blockCountInfoTotal [expr {$blockCountInfoCount + $blockCountInfoUnchecked}]
 		lappend blocksResponse "Blocks:"
-		lappend blocksResponse "  Count     = [dict get $blockCount count]"
-		lappend blocksResponse "  Unchecked = [dict get $blockCount unchecked]"
+		lappend blocksResponse "  Count     = $blockCountInfoCount"
+		lappend blocksResponse "  Unchecked = $blockCountInfoUnchecked"
+		lappend blocksResponse "  Total     = $blockCountInfoTotal"
 		lappend response [join $blocksResponse "\n"]
 	}
 
@@ -4238,7 +4458,7 @@ proc {::nano::rpc::cli::show network} args {
 			return $network
 		}
 	}
-	return "<unknown>"
+	error "Unable to locate genesis block"
 }
 
 proc {::nano::rpc::cli::show version} args {
@@ -4272,6 +4492,32 @@ proc {::nano::rpc::cli::show peers} args {
 	return [join $result "\n"]
 }
 
+proc {::nano::rpc::cli::show node-id} args {
+	set id [dict get [::nano::rpc::client node_id] "public"]
+	return $id
+}
+
+proc ::nano::rpc::cli::rpc {action args} {
+	set format "json"
+	set endmarker [lsearch -exact $args "--"]
+	if {$endmarker != -1} {
+		set field [lrange $args $endmarker+1 end]
+		set args [lrange $args 0 $endmarker-1]
+		set format "dict"
+	}
+
+	set result [::nano::rpc::client $action -outputformat $format {*}$args]
+
+	if {$format eq "json"} {
+		set result [string trim $result "\n\r"]
+	}
+
+	if {[info exists field]} {
+		set result [dict get $result {*}$field]
+	}
+
+	return $result
+}
 
 # Export namespaces
 namespace eval ::nano::node::cli {
