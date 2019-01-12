@@ -3344,7 +3344,7 @@ proc ::nano::network::server::keepalive {messageDict} {
 	::nano::node::stats::incr [list keepalive count]
 	::nano::node::stats::incr [list keepalive peers] [llength $peers]
 	foreach peer $peers {
-		::nano::node::stats::lappend keepalive $peer
+		::nano::node::stats::lappend [list keepalive peersUnique] $peer
 	}
 
 	return ""
