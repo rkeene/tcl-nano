@@ -24,6 +24,7 @@ namespace eval ::nano::balance {}
 namespace eval ::nano::node::bootstrap {}
 namespace eval ::nano::node::realtime {}
 namespace eval ::nano::node::cli {}
+namespace eval ::nano::node::stats {}
 namespace eval ::nano::network::client {}
 namespace eval ::nano::network::server {}
 namespace eval ::nano::protocol::create {}
@@ -3340,12 +3341,11 @@ proc ::nano::network::server::keepalive {messageDict} {
 	}
 
 	# Stats
-	incr ::nano::node::stats([list keepalive count])
-	incr ::nano::node::stats([list keepalive peers]) [llength $peers]
+	::nano::node::stats::incr [list keepalive count]
+	::nano::node::stats::incr [list keepalive peers] [llength $peers]
 	foreach peer $peers {
-		set ::nano::node::_stats_seen_hashes([list keepalive $peer]) 1
+		::nano::node::stats::lappend keepalive $peer
 	}
-	set ::nano::node::stats([list keepalive peersUnique]) [llength [array names ::nano::node::_stats_seen_hashes [list keepalive *]]]
 
 	return ""
 }
@@ -3376,7 +3376,7 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		set retval [dict create "invoke_client" [list node_id_handshake response -privateKey $clientID -query [binary decode hex $query]]]
 
 		# Stats
-		incr ::nano::node::stats([list node_id_handshake query count])
+		::nano::node::stats::incr [list node_id_handshake query count]
 	}
 
 	if {"response" in [dict get $messageDict flags]} {
@@ -3397,16 +3397,15 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
 
 		# Stats
-		incr ::nano::node::stats([list node_id_handshake response count])
-		set ::nano::node::_stats_seen_hashes([list node_id_handshake [dict get $messageDict key]]) 1
-		set ::nano::node::stats([list node_id_handshake response uniqueKeys]) [llength [array names ::nano::node::_stats_seen_hashes [list node_id_handshake *]]]
+		::nano::node::stats::incr [list node_id_handshake response count]
+		::nano::node::stats::lappend [list node_id_handshake response uniqueKeys] [dict get $messageDict key]
 	}
 
 	return $retval
 }
 
 proc ::nano::network::server::confirm_req {messageDict} {
-	incr ::nano::node::stats([list confirm_req])
+	::nano::node::stats::incr [list confirm_req]
 	return ""
 }
 
@@ -3414,44 +3413,26 @@ proc ::nano::network::server::confirm_ack {messageDict} {
 	# keep statistics
 	dict with messageDict {}
 
-	incr ::nano::node::stats([list confirm_ack valid $valid])
+	::nano::node::stats::incr [list confirm_ack valid $valid]
 	if {!$valid} {
 		return ""
 	}
 
-	incr ::nano::node::stats([list confirm_ack rep $voteAccount valid $valid])
+	::nano::node::stats::incr [list confirm_ack rep $voteAccount valid $valid]
 
-	incr ::nano::node::stats([list confirm_ack voteType $voteType])
-	incr ::nano::node::stats([list confirm_ack rep $voteAccount voteType $voteType])
-
-	if {![info exists ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence])]} {
-		set ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) $voteSequence
-	} else {
-		if {$::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) > $voteSequence} {
-			set ::nano::node::stats([list confirm_ack rep $voteAccount minVoteSequence]) $voteSequence
-		}
-	}
-
-	if {![info exists ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence])]} {
-		set ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) $voteSequence
-	} else {
-		if {$::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) < $voteSequence} {
-			set ::nano::node::stats([list confirm_ack rep $voteAccount maxVoteSequence]) $voteSequence
-		}
-	}
+	::nano::node::stats::incr [list confirm_ack voteType $voteType]
+	::nano::node::stats::incr [list confirm_ack rep $voteAccount voteType $voteType]
+	::nano::node::stats::newMinMax [list confirm_ack rep $voteAccount voteSequence] $voteSequence
 
 	set votedOn [llength $hashes]
 
-	incr ::nano::node::stats([list confirm_ack votedOnCount]) $votedOn
-	incr ::nano::node::stats([list confirm_ack rep $voteAccount votedOnCount]) $votedOn
+	::nano::node::stats::incr [list confirm_ack votedOnCount] $votedOn
+	::nano::node::stats::incr [list confirm_ack rep $voteAccount votedOnCount] $votedOn
 
 	foreach hash $hashes {
-		set ::nano::node::_stats_seen_hashes([list confirm_ack $hash]) 1
-		set ::nano::node::_stats_seen_hashes_by_rep([list $voteAccount $hash]) 1
+		::nano::node::stats::lappend [list confirm_ack votedOnUniqueCount] $hash
+		::nano::node::stats::lappend [list confirm_ack rep $voteAccount votedOnUniqueCount] $hash
 	}
-
-	set ::nano::node::stats([list confirm_ack votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes [list confirm_ack *]]]
-	set ::nano::node::stats([list confirm_ack rep $voteAccount votedOnUniqueCount]) [llength [array names ::nano::node::_stats_seen_hashes_by_rep [list $voteAccount *]]]
 
 	return ""
 }
@@ -3498,13 +3479,11 @@ if {[catch {
 	set validWork [::nano::internal::boolean [::nano::block::dict::validateWork $block]]
 
 
-	incr ::nano::node::stats([list publish valid $valid])
-	incr ::nano::node::stats([list publish validWork $validWork])
-	incr ::nano::node::stats([list publish type [dict get $block type]])
+	::nano::node::stats::incr [list publish valid $valid]
+	::nano::node::stats::incr [list publish validWork $validWork]
+	::nano::node::stats::incr [list publish type [dict get $block type]]
+	::nano::node::stats::lappend [list publish unique] $hash
 
-	set ::nano::node::_stats_seen_hashes([list publish $hash]) 1
-
-	set ::nano::node::stats([list publish unique]) [llength [array names ::nano::node::_stats_seen_hashes [list publish *]]]
 }]} { puts $::errorInfo }
 
 	return ""
@@ -3718,7 +3697,7 @@ proc ::nano::node::start args {
 	package require udp
 
 	set ::nano::node::startTime [clock seconds]
-	set ::nano::node::statsStartTime [clock seconds]
+	::nano::node::stats::open
 
 	array set config {
 		-bootstrap true
@@ -3738,6 +3717,107 @@ proc ::nano::node::start args {
 	if {$config(-wait)} {
 		vwait ::nano::node::_FOREVER_
 	}
+}
+
+# Node stats
+proc ::nano::node::stats::open {} {
+	set db ::nano::node::stats::_db
+	if {[llength [info command $db]] != 0} {
+		return
+	}
+
+	package require sqlite3
+
+	sqlite3 $db "" -create true
+	tailcall clear
+}
+
+proc ::nano::node::stats::clear {} {
+	set db ::nano::node::stats::_db
+
+	$db eval {DROP TABLE IF EXISTS counters}
+	$db eval {DROP TABLE IF EXISTS minmax}
+	$db eval {DROP TABLE IF EXISTS lists}
+	$db eval {DROP TABLE IF EXISTS info}
+	$db eval {CREATE TABLE counters (key PRIMARY KEY, current INTEGER DEFAULT 0)}
+	$db eval {CREATE TABLE minmax (key PRIMARY KEY, high INTEGER NOT NULL, low INTEGER NOT NULL)}
+	$db eval {CREATE TABLE lists (key NOT NULL, value, UNIQUE (key, value))}
+	$db eval {CREATE TABLE info (key PRIMARY KEY, value NOT NULL)}
+
+	set now [clock seconds]
+	$db eval {INSERT OR REPLACE INTO info (key, value) VALUES ('startTime', $now)}
+
+	return
+}
+
+proc ::nano::node::stats::incr {key {amount 1}} {
+	set db ::nano::node::stats::_db
+
+	# Requires a new version of SQLite3
+	set haveUpsert false
+
+	if {$haveUpsert} {
+		# Untested
+		set query {
+			INSERT INTO counters (key, current) VALUES ($key, '@@AMOUNT@@') ON CONFLICT (key) DO
+			UPDATE counters SET current = current + @@AMOUNT@@;
+		}
+	} else {
+		set query {
+			INSERT OR IGNORE INTO counters (key, current) VALUES ($key, '0');
+			UPDATE counters SET current = current + @@AMOUNT@@ WHERE key = $key;
+		}
+	}
+
+	$db eval [string map [list @@AMOUNT@@ $amount] $query]
+}
+
+proc ::nano::node::stats::newMinMax {key value} {
+	set db ::nano::node::stats::_db
+
+	$db eval {
+		INSERT OR IGNORE INTO minmax (key, high, low) VALUES ($key, $value, $value);
+		UPDATE minmax SET high = $value WHERE key = $key AND $value > high;
+		UPDATE minmax SET low = $value  WHERE key = $key AND $value < low;
+	}
+}
+
+proc ::nano::node::stats::lappend {key value} {
+	set db ::nano::node::stats::_db
+
+	$db eval {INSERT OR IGNORE INTO lists (key, value) VALUES ($key, $value)}
+}
+
+proc ::nano::node::stats::startTime {} {
+	set db ::nano::node::stats::_db
+
+	set startTime [$db onecolumn {SELECT value FROM info WHERE key = 'startTime'}]
+
+	return $startTime
+}
+
+proc ::nano::node::stats::get {} {
+	set db ::nano::node::stats::_db
+
+	set results(startTime) [startTime]
+
+	unset -nocomplain row
+	$db eval {SELECT key, current FROM counters} row {
+		set results($row(key)) $row(current)
+	}
+
+	unset -nocomplain row
+	$db eval {SELECT key, COUNT(key) count FROM lists GROUP BY key} row {
+		set results($row(key)) $row(count)
+	}
+
+	unset -nocomplain row
+	$db eval {SELECT key, high, low FROM minmax} row {
+		set results([concat $row(key) min]) $row(low)
+		set results([concat $row(key) max]) $row(high)
+	}
+
+	return [array get results]
 }
 
 # RPC Client
@@ -3912,6 +3992,41 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 	return $result
 }
 
+# Node Wallet Functions
+proc ::nano::wallet::decode_backup {password walletJSON} {
+	array set walletArray [::json::json2dict $walletJSON]
+
+	set wallet(version) [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000000)]
+	set wallet(salt)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000001)]
+	set wallet(key)     [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000002)]
+	set wallet(check)   [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000003)]
+	set wallet(rep)     [::nano::address::fromPublicKey $walletArray(0000000000000000000000000000000000000000000000000000000000000004)]
+	set wallet(seed)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000005)]
+	set wallet(index)   [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000006)]
+
+	if {$wallet(version) != 4} {
+		return -code error "Unsupported wallet backup version ($version)"
+	}
+
+	set walletKeyIV [string range $wallet(salt) 0 15]
+	set seedIV      [string range $wallet(salt) 16 end]
+
+	# XXX:TODO: Check the password against "check"
+
+	# Decrypt seed
+	set aesKey    [::nano::internal::deriveKeyFromPassword $password $wallet(salt)]
+	set walletKey [::nano::internal::AES256-CTR $aesKey $walletKeyIV $wallet(key)]
+	set seed      [::nano::internal::AES256-CTR $walletKey $seedIV $wallet(seed)]
+
+	# Format results
+	set wallet(seed) [string toupper [binary encode hex $seed]]
+
+	# XXX:TODO: Include ad-hoc keys
+
+	return [array get wallet]
+}
+
+
 # Generic CLI helpers
 proc ::nano::_cli {namespace args} {
 	for {set argIndex 0} {$argIndex < [llength $args]} {incr argIndex} {
@@ -4082,40 +4197,6 @@ proc {::nano::_cli::multiword help} {namespace base args} {
 	tailcall help $namespace $base {*}$args
 }
 
-# Node Wallet Functions
-proc ::nano::wallet::decode_backup {password walletJSON} {
-	array set walletArray [::json::json2dict $walletJSON]
-
-	set wallet(version) [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000000)]
-	set wallet(salt)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000001)]
-	set wallet(key)     [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000002)]
-	set wallet(check)   [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000003)]
-	set wallet(rep)     [::nano::address::fromPublicKey $walletArray(0000000000000000000000000000000000000000000000000000000000000004)]
-	set wallet(seed)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000005)]
-	set wallet(index)   [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000006)]
-
-	if {$wallet(version) != 4} {
-		return -code error "Unsupported wallet backup version ($version)"
-	}
-
-	set walletKeyIV [string range $wallet(salt) 0 15]
-	set seedIV      [string range $wallet(salt) 16 end]
-
-	# XXX:TODO: Check the password against "check"
-
-	# Decrypt seed
-	set aesKey    [::nano::internal::deriveKeyFromPassword $password $wallet(salt)]
-	set walletKey [::nano::internal::AES256-CTR $aesKey $walletKeyIV $wallet(key)]
-	set seed      [::nano::internal::AES256-CTR $walletKey $seedIV $wallet(seed)]
-
-	# Format results
-	set wallet(seed) [string toupper [binary encode hex $seed]]
-
-	# XXX:TODO: Include ad-hoc keys
-
-	return [array get wallet]
-}
-
 # Node CLI
 proc ::nano::node::cli {args} {
 	tailcall ::nano::_cli node -prompt {
@@ -4126,7 +4207,7 @@ proc ::nano::node::cli {args} {
 proc {::nano::node::cli::show uptime} {} {
 	set now [clock seconds]
 	set start $::nano::node::startTime
-	set statsStart $::nano::node::statsStartTime
+	set statsStart [::nano::node::stats::startTime]
 
 	set uptime [expr {$now - $start}]
 	set uptimeStats [expr {$now - $statsStart}]
@@ -4149,16 +4230,13 @@ proc {::nano::node::cli::show logs} args {
 }
 
 proc {::nano::node::cli::clear stats} args {
-	set ::nano::node::statsStartTime [clock seconds]
-
-	unset -nocomplain ::nano::node::stats
-	unset -nocomplain ::nano::node::_stats_seen_hashes
-	unset -nocomplain ::nano::node::_stats_seen_hashes_by_rep
+	::nano::node::stats::clear
 
 	return
 }
 
 proc {::nano::node::cli::clear peers} args {
+	return -code error "Unimplemented"
 	set ::nano::node::statsStartTime [clock seconds]
 
 	unset -nocomplain ::nano::node::peers
@@ -4168,8 +4246,12 @@ proc {::nano::node::cli::clear peers} args {
 }
 
 proc {::nano::node::cli::show stats} args {
+	set stats [::nano::node::stats::get]
+
+	set statsStart [dict get $stats startTime]
+	dict unset stats startTime
+
 	set now [clock seconds]
-	set statsStart $::nano::node::statsStartTime
 	set uptimeStats [expr {$now - $statsStart}]
 
 	set quiet false
@@ -4189,7 +4271,7 @@ proc {::nano::node::cli::show stats} args {
 	}
 
 	set maxKeyLen 0
-	foreach {key val} [array get ::nano::node::stats] {
+	foreach {key val} $stats {
 		if {[lindex $key 1] eq "rep"} {
 			if {$globalOnly} {
 				continue
@@ -4219,7 +4301,10 @@ proc {::nano::node::cli::show stats} args {
 			if {[string is entier -strict $val]} {
 				set valAvg [expr {($val * 1.0) / $uptimeStats}]
 				set valAvg [format %.4f $valAvg]
-				set extra " (avg: $valAvg per second)"
+
+				if {[lindex $key end] ni {max min}} {
+					set extra " (avg: $valAvg per second)"
+				}
 			}
 		}
 
