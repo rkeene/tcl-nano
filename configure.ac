@@ -136,5 +136,29 @@ if test "$tcl_nano_debug" = 'true'; then
 	REMOVESYMS=':'
 fi
 
+dnl Default to using the amalgamation for static, not using it for shared
+if test "$TCLEXT_BUILD" != 'static'; then
+	tcl_nano_amalgamation='false'
+else
+	tcl_nano_amalgamation='true'
+fi
+
+AC_ARG_ENABLE([amalgamation], AS_HELP_STRING([--enable-amalgamation], [enable compiling the whole program as a single translation unit (default: disabled for shared, enabled for static)]), [
+	if test "$enableval" = 'yes'; then
+		tcl_nano_amalgamation='true'
+	elif test "$enableval" = 'no'; then
+		tcl_nano_amalgamation='false'
+	else
+		AC_ERROR([Unknown value for --enable-amalgamation])
+	fi
+])
+if test "$tcl_nano_amalgamation" = 'true'; then
+	TCL_NANO_AMALGAMATION='1'
+else
+	TCL_NANO_AMALGAMATION='0'
+fi
+AC_SUBST(TCL_NANO_AMALGAMATION)
+
+
 dnl Produce output
 AC_OUTPUT(Makefile pkgIndex.tcl-${TCLEXT_BUILD} nano.syms)

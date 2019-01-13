@@ -16,26 +16,33 @@ srcdir        := @srcdir@
 prefix        := @prefix@
 exec_prefix   := @exec_prefix@
 libdir        := @libdir@
-PACKAGE_VERSION     := @PACKAGE_VERSION@
-TCL_PACKAGE_PATH    := @TCL_PACKAGE_PATH@
-PACKAGE_INSTALL_DIR := $(TCL_PACKAGE_PATH)/tcl-nano$(PACKAGE_VERSION)
-INSTALL             := @INSTALL@
-INSTALL_PROGRAM     := @INSTALL_PROGRAM@
-INSTALL_DATA        := @INSTALL_DATA@
+TCL_NANO_AMALGAMATION := @TCL_NANO_AMALGAMATION@
+PACKAGE_VERSION       := @PACKAGE_VERSION@
+TCL_PACKAGE_PATH      := @TCL_PACKAGE_PATH@
+PACKAGE_INSTALL_DIR   := $(TCL_PACKAGE_PATH)/tcl-nano$(PACKAGE_VERSION)
+INSTALL               := @INSTALL@
+INSTALL_PROGRAM       := @INSTALL_PROGRAM@
+INSTALL_DATA          := @INSTALL_DATA@
 export CC CFLAGS CPPFLAGS
 
 all: @EXTENSION_TARGET@ pkgIndex.tcl
 
+ifneq ($(TCL_NANO_AMALGAMATION),1)
+TCL_NANO_OBJECTS = monocypher.o argon2.o aes.o randombytes.o nano.o
+else
+TCL_NANO_OBJECTS = nano-amalgamation.o
+endif
+
 ifeq (@TCLEXT_BUILD@,shared)
-@EXTENSION_TARGET@: monocypher.o argon2.o aes.o randombytes.o nano.o Makefile
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ nano.o randombytes.o monocypher.o argon2.o aes.o $(LIBS)
+@EXTENSION_TARGET@: $(TCL_NANO_OBJECTS) Makefile
+	rm -f @EXTENSION_TARGET@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SHOBJLDFLAGS) -o @EXTENSION_TARGET@ $(TCL_NANO_OBJECTS) $(LIBS)
 	-@WEAKENSYMS@ @EXTENSION_TARGET@
 	-@REMOVESYMS@ @EXTENSION_TARGET@
 else
-@EXTENSION_TARGET@: nano-amalgamation.o Makefile
-	-@WEAKENSYMS@ nano-amalgamation.o
-	-@REMOVESYMS@ nano-amalgamation.o
-	$(AR) rc @EXTENSION_TARGET@ nano-amalgamation.o
+@EXTENSION_TARGET@: $(TCL_NANO_OBJECTS) Makefile
+	rm -f @EXTENSION_TARGET@
+	$(AR) rc @EXTENSION_TARGET@ $(TCL_NANO_OBJECTS)
 	-$(RANLIB) @EXTENSION_TARGET@
 endif
 
@@ -47,6 +54,10 @@ nano-amalgamation.c: @srcdir@/nano.c @srcdir@/randombytes.c $(monocypher_dir)mon
 
 nano-amalgamation.o: nano-amalgamation.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) -DTCL_NANO_AMALGAMATION=1 $(CFLAGS) -o nano-amalgamation.o -c nano-amalgamation.c
+ifneq (@TCLEXT_BUILD@,shared)
+	-@WEAKENSYMS@ nano-amalgamation.o
+	-@REMOVESYMS@ nano-amalgamation.o
+endif
 
 nano.o: @srcdir@/nano.c $(monocypher_dir)monocypher.h $(argon2_dir)argon2.h $(aes_dir)aes.h @srcdir@/randombytes.h nano.tcl.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o nano.o -c @srcdir@/nano.c
