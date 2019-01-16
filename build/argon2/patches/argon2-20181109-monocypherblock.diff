@@ -1,0 +1,13 @@
+--- a/core.h
++++ b/core.h
+@@ -49,7 +49,9 @@
+  * Memory blocks can be copied, XORed. Internal words can be accessed by [] (no
+  * bounds checking).
+  */
+-typedef struct block_ { uint64_t v[ARGON2_QWORDS_IN_BLOCK]; } block;
++#ifndef TCL_NANO_AMALGAMATION
++typedef struct block_ { uint64_t a[ARGON2_QWORDS_IN_BLOCK]; } block;
++#endif
+ 
+ /*****************Functions that work with the block******************/
+ 

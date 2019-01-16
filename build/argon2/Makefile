@@ -4,12 +4,14 @@ all: out/argon2.c out/argon2.h
 
 src-patched/argon2.c src-patched/argon2.h src-patched/blake2b.c src-patched/blamka-round-ref.h src-patched/core.c src-patched/core.h src-patched/encoding.c src-patched/encoding.h src-patched/ref.c: src-patched Makefile
 
-src-patched: src/argon2.c src/argon2.h src/blake2b.c src/blamka-round-ref.h src/core.c src/core.h src/encoding.c src/encoding.h src/ref.c patches/argon2-20181109-tclamalgamation.diff patches/argon2-20181109-noencoding.diff Makefile
-	rm -rf src-patched src-patched.new
+src-patched: src/argon2.c src/argon2.h src/blake2b.c src/blamka-round-ref.h src/core.c src/core.h src/encoding.c src/encoding.h src/ref.c patches/argon2-20181109-tclamalgamation.diff patches/argon2-20181109-noencoding.diff patches/argon2-20181109-monocypherblock.diff Makefile
+	rm -rf src-patched.new
 	mkdir src-patched.new
 	cp $^ src-patched.new/
 	cd src-patched.new && patch --batch --posix -p1 < ../patches/argon2-20181109-tclamalgamation.diff
 	cd src-patched.new && patch --batch --posix -p1 < ../patches/argon2-20181109-noencoding.diff
+	cd src-patched.new && patch --batch --posix -p1 < ../patches/argon2-20181109-monocypherblock.diff
+	rm -rf src-patched
 	mv src-patched.new src-patched
 
 out/argon2.c: src-patched/argon2.c src-patched/ref.c src-patched/core.c src-patched/blake2b.c src-patched/encoding.c monocypher-blake2b.h Makefile
@@ -37,9 +39,7 @@ out/argon2.h: src-patched/argon2.h src-patched/blamka-round-ref.h src-patched/co
 	echo '#endif' >> out/argon2.h.new.1
 	sed -r '/^extern int FLAG/ d;/#include "/ d;/( |\*)argon(2_ctx|2_verify|2_hash|2_type2|2_error_message|2_encodedlen|2i_|2d_|2id_)/ b;/:/ b;/^(static|extern|enum|typedef) / b;s@^[a-z]@static &@' out/argon2.h.new.1 > out/argon2.h.new.2
 	rm -f out/argon2.h.new.1
-	sed '/^typedef struct .* block;$$/ {i \'$$'\n''#ifndef TCL_NANO_AMALGAMATION'$$'\n''s@ v\[@ a[@;p;i \'$$'\n''#endif'$$'\n''d}' out/argon2.h.new.2 > out/argon2.h.new.1
-	rm -f out/argon2.h.new.2
-	mv out/argon2.h.new.1 out/argon2.h
+	mv out/argon2.h.new.2 out/argon2.h
 
 install: out/argon2.c out/argon2.h
 	mkdir -p '$(PREFIX)'
