@@ -25,3 +25,6 @@ build/argon2/src-patched.new
 build/argon2/INST
 build/work
 build/tcl
+build/kits/kitcreator-*.tar.gz
+build/kits/kitcreator-build-*
+build/kits/tcl-nano-*

@@ -1,0 +1,173 @@
+#! /usr/bin/env bash
+
+kitcreator_version='0.11.0'
+kitcreator_tarball="kitcreator-${kitcreator_version}.tar.gz"
+kitcreator_url="http://www.rkeene.org/devel/kitcreator-${kitcreator_version}.tar.gz"
+kitcreator_sha256='9999f6456e6cefe0db4e37e3945d453e9420c7408ae9014e296a052670395150'
+
+function download() {
+	local file hash urls 
+	local authoritativeURL url
+	local tryDownloadProgram tryDownloadProgramPath
+	local downloadProgram
+	local hashMethod checkHash
+
+	file="$1"
+	hash="$2"
+	shift 2
+
+	if [ -f "${file}" ]; then
+		return 0
+	fi
+
+	hashMethod='sha256'
+	urls=("http://hashcache.rkeene.org/${hashMethod}/${hash}" "$@")
+	authoritativeURL="${urls[@]: -1}"
+
+	for tryDownloadProgram in wget curl; do
+		tryDownloadProgramPath="$(command -v "${tryDownloadProgram}" 2>/dev/null)"
+
+		if [ -z "${tryDownloadProgramPath}" ]; then
+			continue
+		fi
+
+		if [ -x "${tryDownloadProgramPath}" ]; then
+			downloadProgram="${tryDownloadProgram}"
+
+			break
+		fi
+	done
+
+	case "${downloadProgram}" in
+		curl)
+			downloadProgramArgs=(--header "X-Cache-URL: ${authoritativeURL}" --location --insecure --fail --output "${file}.new")
+			;;
+		wget)
+			downloadProgramArgs=(--header="X-Cache-URL: ${authoritativeURL}" --no-check-certificate --output-document="${file}.new")
+			;;
+	esac
+
+	for url in "${urls[@]}" __fail__; do
+		rm -f "${file}.new"
+
+		if [ "${url}" = '__fail__' ]; then
+			return 1
+		fi
+
+		"${downloadProgram}" "${downloadProgramArgs[@]}" "${url}" && break
+	done
+
+	checkHash="$(openssl dgst "-${hashMethod}" "${file}.new" | sed 's@.*= *@@')"
+
+	if [ "${checkHash}" != "${hash}" ]; then
+		echo "Hash (${hashMethod}) mismatch: Got: ${checkHash}; Expected: ${hash}" >&2
+
+		return 1
+	fi
+
+	mv "${file}.new" "${file}"
+
+	return 0
+}
+
+function cleanup() {
+	if [ -n "${workdir}" -a -d "${workdir}" ]; then
+		rm -rf "${workdir}"
+	fi
+}
+
+set -e
+
+topdir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+workdir="$(pwd)/kitcreator-build-$(openssl rand -base64 6 | sed 's@[/+]@X@g')"
+trap cleanup EXIT
+
+# Download KitCreator
+download "${kitcreator_tarball}" "${kitcreator_sha256}" "${kitcreator_url}"
+
+# Extract KitCreator
+mkdir "${workdir}" 
+gzip -dc "${kitcreator_tarball}" | (
+	cd "${workdir}" || exit 1
+	tar -xf -
+	shopt -s dotglob
+	mv */* .
+	rmdir kitcreator-[0-9]*
+)
+
+# Copy the library into the build system
+mkdir "${workdir}/nano" >/dev/null 2>/dev/null || :
+mkdir "${workdir}/nano/buildsrc"
+(
+	cd "${topdir}" || exit 1
+	find . '(' \
+		-path './build/argon2' -o \
+		-path './build/argon2/*' -o \
+		-path './build/pre.sh' -o \
+		-path './build/post.sh' -o \
+		! -path './build/*' \
+	')' -print0 | cpio --quiet -0p "${workdir}/nano/buildsrc" || exit 1
+
+	cd "${workdir}/nano/buildsrc" || exit 1
+	./build/pre.sh || exit 1
+	./build/post.sh || exit 1
+	./configure || exit 1
+	make distclean || exit 1
+)
+
+# Prepare the build system for the library
+(
+	cd "${workdir}/nano" || exit 1
+
+	if [ ! -f "build.sh" ]; then
+		cat << \_EOF_ > build.sh
+#! /usr/bin/env bash
+
+# BuildCompatible: KitCreator
+
+version="1.0"
+configure_extra=(--enable-stubs)
+
+function preconfigure() {
+	sed -i 's@stack-protector-all@donot-stack-protector-all@g' configure
+}
+
+function postinstall() {
+	rm -f "${installdir}/lib/tcl-nano${version}/nano.man"
+	if [ -f "${installdir}/lib/tcl-nano${version}/nano.lib" -a ! -f "${installdir}/lib/tcl-nano${version}/nano.a" ]; then
+		mv "${installdir}/lib/tcl-nano${version}/nano.lib" "${installdir}/lib/tcl-nano${version}/nano.a"
+	fi
+}
+_EOF_
+		chmod +x build.sh
+	fi
+)
+
+# Copy the application into the kit
+mkdir "${workdir}/app"
+mkdir "${workdir}/app/in"
+(
+	cp -rp app/* "${workdir}/app/in" || exit 1
+
+	cd "${workdir}/app" || exit 1
+	cat << \_EOF_ > "build.sh" || exit 1
+#! /usr/bin/env bash
+
+cp -rp in out
+_EOF_
+	chmod +x build.sh
+)
+
+# Build the kit
+(
+	cd "${workdir}"
+
+	export KITCREATOR_PKGS='nano tcllib udp lmdb app'
+	./kitcreator "$@" --enable-kit-storage=cvfs
+)
+
+# XXX:TODO:
+platform='linux-x86_64'
+
+# Copy the kit out
+mv "${workdir}"/tclkit-* ./tcl-nano-"${platform}"
