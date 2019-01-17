@@ -30,7 +30,7 @@ namespace eval ::nano::network::server {}
 namespace eval ::nano::protocol::create {}
 namespace eval ::nano::protocol::parse {}
 namespace eval ::nano::protocol::extensions {}
-namespace eval ::nano::network::_dns {}
+namespace eval ::nano::internal::dns {}
 namespace eval ::nano::wallet {}
 namespace eval ::nano::_cli {}
 
@@ -1980,7 +1980,6 @@ proc ::nano::node::setLedgerHandle {handle} {
 
 proc ::nano::node::configure {network args} {
 	package require ip
-	package require dns
 
 	# Set default options
 	switch -- $network {
@@ -3007,10 +3006,18 @@ proc ::nano::node::bootstrap::peer {peer peerPort} {
 	return
 }
 
-proc ::nano::network::_dns::toIPList {name} {
+proc ::nano::internal::dns::resolve {name} {
 	if {[::ip::version $name] > 0} {
 		return [list $name]
 	}
+
+	if {$::nano::internal::haveResolveName} {
+		set retval [::nano::internal::resolveName $name]
+		set retval [lsort -unique $retval]
+		return $retval
+	}
+
+	package require dns
 
 	set retval [list]
 	foreach addressType {A AAAA} {
@@ -3244,7 +3251,7 @@ proc ::nano::node::getPeers {} {
 		lassign [::nano::internal::parseAddress $peer $defaultPeerPort] peer peerPort
 
 		catch {
-			foreach peer [::nano::network::_dns::toIPList $peer] {
+			foreach peer [::nano::internal::dns::resolve $peer] {
 				lappend completePeers [dict create address $peer port $peerPort]
 			}
 		}

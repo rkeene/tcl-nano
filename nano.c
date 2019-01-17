@@ -11,6 +11,27 @@
 #  include <omp.h>
 #endif
 
+/*
+ * We need both getaddrinfo and inet_ntop for DNS resolution
+ */
+#if defined(HAVE_GETNAMEINFO) && defined(HAVE_GETADDRINFO)
+#  define NANO_TCL_CAN_RESOLVE_NAMES 1
+#else
+#  undef NANO_TCL_CAN_RESOLVE_NAMES
+#endif
+
+#ifdef NANO_TCL_CAN_RESOLVE_NAMES
+#  ifdef HAVE_SYS_SOCKET_H
+#    include <sys/socket.h>
+#  endif
+#  ifdef HAVE_SYS_TYPES_H
+#    include <sys/types.h>
+#  endif
+#  ifdef HAVE_NETDB_H
+#    include <netdb.h>
+# endif
+#endif
+
 #include "randombytes.h"
 #include "monocypher.h"
 #include "argon2.h"
@@ -568,6 +589,103 @@ static int nano_tcl_random_bytes(ClientData clientData, Tcl_Interp *interp, int 
 	clientData = clientData;
 }
 
+#ifdef NANO_TCL_CAN_RESOLVE_NAMES
+static int nano_tcl_resolve_name(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	Tcl_Encoding ascii_encoding;
+	Tcl_Obj *list_of_hostnames, *hostname_obj;
+	struct addrinfo *gai_data, *addr_current;
+	char *hostname_utf8, hostname[256];
+	int hostname_utf8_length, hostname_utf8_length_processed, hostname_length;
+	int tute_ret, gai_ret, gni_ret;
+
+	if (objc != 2) {
+		Tcl_WrongNumArgs(interp, 1, objv, "hostname");
+
+		return(TCL_ERROR);
+	}
+
+	hostname_utf8 = Tcl_GetStringFromObj(objv[1], &hostname_utf8_length);
+	if (!hostname_utf8) {
+		return(TCL_ERROR);
+	}
+
+	/*
+	 * getaddrinfo() accepts ASCII input, so convert to that encoding
+	 */
+	ascii_encoding = Tcl_GetEncoding(interp, "ascii");
+	if (ascii_encoding == NULL) {
+		return(TCL_ERROR);
+	}
+
+	tute_ret = Tcl_UtfToExternal(interp, ascii_encoding, hostname_utf8,
+	               hostname_utf8_length, TCL_ENCODING_STOPONERROR, NULL,
+	               hostname, sizeof(hostname),
+	               &hostname_utf8_length_processed,
+	               &hostname_length, NULL
+	           );
+
+	Tcl_FreeEncoding(ascii_encoding);
+
+	if (tute_ret != TCL_OK) {
+		Tcl_SetResult(interp, "Failed to convert to ASCII", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	if (hostname_utf8_length_processed != hostname_utf8_length) {
+		Tcl_SetResult(interp, "Failed to convert entire buffer", NULL);
+
+		return(TCL_ERROR);
+	}
+
+	gai_ret = getaddrinfo(hostname, NULL, NULL, &gai_data);
+	if (gai_ret == EAI_NODATA || gai_ret == EAI_NONAME) {
+		Tcl_SetResult(interp, "", NULL);
+
+		return(TCL_OK);
+	}
+	if (gai_ret != 0) {
+		Tcl_SetResult(interp, (char *) gai_strerror(gai_ret), NULL);
+
+		return(TCL_ERROR);
+	}
+
+	list_of_hostnames = Tcl_NewObj();
+	for (addr_current = gai_data; addr_current; addr_current = addr_current->ai_next) {
+		if (addr_current->ai_family != AF_INET && addr_current->ai_family != AF_INET6) {
+			continue;
+		}
+
+		gni_ret = getnameinfo(addr_current->ai_addr, addr_current->ai_addrlen,
+		                      hostname, sizeof(hostname),
+		                      NULL, 0, NI_NUMERICHOST
+		          );
+		if (gni_ret != 0) {
+			continue;
+		}
+
+		hostname_obj = Tcl_NewStringObj(hostname, -1);
+
+		Tcl_ListObjAppendElement(NULL, list_of_hostnames, hostname_obj);
+	}
+
+	freeaddrinfo(gai_data);
+
+	Tcl_SetObjResult(interp, list_of_hostnames);
+
+	return(TCL_OK);
+
+	/* NOTREACH */
+	clientData = clientData;
+}
+#else
+static int nano_tcl_resolve_name(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+	Tcl_SetResult(interp, "Not supported on this platform", NULL);
+	
+	return(TCL_ERROR);
+}
+#endif
+
 static int nano_tcl_self_test(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
 	if (objc != 1) {
 		Tcl_WrongNumArgs(interp, 1, objv, "");
@@ -603,6 +721,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	}
 
 	TclNano_CreateNamespace(interp, "::nano");
+	TclNano_CreateNamespace(interp, "::nano::internal");
 	TclNano_CreateNamespace(interp, "::nano::block");
 	TclNano_CreateNamespace(interp, "::nano::key");
 	TclNano_CreateNamespace(interp, "::nano::work");
@@ -614,6 +733,11 @@ int Nano_Init(Tcl_Interp *interp) {
 	TclNano_SetIntVar(interp, "::nano::key::seedLength", NANO_SECRET_KEY_LENGTH);
 	TclNano_SetIntVar(interp, "::nano::work::workValueLength", NANO_WORK_VALUE_LENGTH);
 	TclNano_SetIntVar(interp, "::nano::work::workHashLength", NANO_WORK_HASH_LENGTH);
+#ifdef NANO_TCL_CAN_RESOLVE_NAMES
+	TclNano_SetIntVar(interp, "::nano::internal::haveResolveName", 1);
+#else
+	TclNano_SetIntVar(interp, "::nano::internal::haveResolveName", 0);
+#endif
 
 	TclNano_CreateObjCommand(interp, "::nano::internal::selfTest", nano_tcl_self_test);
 	TclNano_CreateObjCommand(interp, "::nano::internal::generateKey", nano_tcl_generate_keypair);
@@ -627,6 +751,7 @@ int Nano_Init(Tcl_Interp *interp) {
 	TclNano_CreateObjCommand(interp, "::nano::internal::validateWork", nano_tcl_validate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::generateWork", nano_tcl_generate_work);
 	TclNano_CreateObjCommand(interp, "::nano::internal::randomBytes", nano_tcl_random_bytes);
+	TclNano_CreateObjCommand(interp, "::nano::internal::resolveName", nano_tcl_resolve_name);
 
 	TclNano_Eval(interp, nanoInitScript);
 

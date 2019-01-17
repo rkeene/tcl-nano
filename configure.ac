@@ -109,9 +109,16 @@ if test -n "${tcl_nano_openmp}"; then
 fi
 
 dnl Random number generation mechanisms
-AC_CHECK_FUNC(getrandom,, [
-	AC_CHECK_FUNC(getentropy,, [
-		AC_CHECK_FUNC(CryptGenRandom)
+AC_CHECK_FUNCS(getrandom,, [
+	AC_CHECK_FUNCS(getentropy,, [
+		AC_CHECK_FUNCS(CryptGenRandom)
+	])
+])
+
+dnl Check for name resolution capabilities
+AC_CHECK_FUNCS(getaddrinfo, [
+	AC_CHECK_FUNCS(getnameinfo, [
+		AC_CHECK_HEADERS(sys/types.h sys/socket.h netdb.h)
 	])
 ])
 
@@ -158,7 +165,6 @@ else
 	TCL_NANO_AMALGAMATION='0'
 fi
 AC_SUBST(TCL_NANO_AMALGAMATION)
-
 
 dnl Produce output
 AC_OUTPUT(Makefile pkgIndex.tcl-${TCLEXT_BUILD} nano.syms)
