@@ -1,0 +1,44 @@
+#! /usr/bin/env bash
+
+platforms=(
+	x86_64-generic-linux-musl/linux-x86_64
+	arm-android9-linux-androideabi/android-arm
+	sparc-sun-solaris2.10/solaris-sparc64
+	x86_64-unknown-freebsd8/freebsd-x86_64
+	x86_64-unknown-netbsd5/netbsd-x86_64
+	i586-mingw32msvc/windows-ix86
+)
+
+topdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for platform in "${platforms[@]}"; do
+	ccName="$(echo "${platform}" | cut -f 1 -d /)"
+	tclName="$(echo "${platform}" | cut -f 2 -d /)"
+
+	(
+		# When cross-compiling Tcl it cannot detect these things and so assumes failure
+		# This in turn creates linking issues because it will define the replacements
+		# in the main library and stubs library, which we may both link to
+		ac_cv_func_memcmp_working=yes
+		tcl_cv_strstr_unbroken=ok
+		tcl_cv_strtoul_unbroken=ok
+		tcl_cv_strtod_unbroken=ok
+		tcl_cv_strtod_buggy=ok
+		export ac_cv_func_memcmp_working tcl_cv_strstr_unbroken tcl_cv_strtoul_unbroken tcl_cv_strtod_unbroken tcl_cv_strtod_buggy
+
+		# Statically link all the pkgs
+		KC_TCL_STATICPKGS='1'
+		export KC_TCL_STATICPKGS
+
+		case "${ccName}" in
+			*-musl)
+        			KC_KITSH_LDFLAGS="-static"
+				export KC_KITSH_LDFLAGS
+				;;
+		esac
+
+		eval "$(~/root/cross-compilers/setup-cc "${ccName}")"
+
+		"${topdir}/make-kit" --tcl-platform="${tclName}" --host="${ccName}"
+	)
+done
