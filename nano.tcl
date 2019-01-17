@@ -4104,9 +4104,9 @@ proc ::nano::_cli {namespace args} {
 				::tclreadline::Loop
 			} else {
 				fconfigure stdout -blocking false
-				puts -nonewline "> "
+				puts -nonewline [apply [list {} $prompt]]
 				flush stdout
-				fileevent stdin readable [list apply {{} {
+				fileevent stdin readable [list apply {{prompt} {
 					uplevel #0 {
 						gets stdin __line__
 						if {$__line__ eq "" && [eof stdin]} {
@@ -4122,9 +4122,9 @@ proc ::nano::_cli {namespace args} {
 						}
 					}
 
-					puts -nonewline "> "
+					puts -nonewline [apply [list {} $prompt]]
 					flush stdout
-				}}]
+				}} $prompt]
 
 				vwait forever
 			}
