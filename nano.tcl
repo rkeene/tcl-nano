@@ -3348,7 +3348,7 @@ proc ::nano::network::server::keepalive {messageDict} {
 	}
 
 	# Stats
-	::nano::node::stats::incr [list keepalive count]
+	::nano::node::stats::incr [list keepalive]
 	::nano::node::stats::incr [list keepalive peers] [llength $peers]
 	foreach peer $peers {
 		::nano::node::stats::lappend [list keepalive peersUnique] $peer
@@ -3377,13 +3377,15 @@ proc ::nano::protocol::parse::node_id_handshake {extensions messageData} {
 proc ::nano::network::server::node_id_handshake {messageDict} {
 	set retval ""
 
+	::nano::node::stats::incr [list node_id_handshake]
+
 	if {"query" in [dict get $messageDict flags]} {
 		set query [dict get $messageDict query]
 		set clientID [dict get $::nano::node::configuration node client_id_private_key]
 		set retval [dict create "invoke_client" [list node_id_handshake response -privateKey $clientID -query [binary decode hex $query]]]
 
 		# Stats
-		::nano::node::stats::incr [list node_id_handshake query count]
+		::nano::node::stats::incr [list node_id_handshake query]
 	}
 
 	if {"response" in [dict get $messageDict flags]} {
@@ -3404,7 +3406,7 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
 
 		# Stats
-		::nano::node::stats::incr [list node_id_handshake response count]
+		::nano::node::stats::incr [list node_id_handshake response]
 		::nano::node::stats::lappend [list node_id_handshake response uniqueKeys] [dict get $messageDict key]
 	}
 
@@ -3420,6 +3422,7 @@ proc ::nano::network::server::confirm_ack {messageDict} {
 	# keep statistics
 	dict with messageDict {}
 
+	::nano::node::stats::incr [list confirm_ack]
 	::nano::node::stats::incr [list confirm_ack valid $valid]
 	if {!$valid} {
 		return ""
@@ -3433,12 +3436,12 @@ proc ::nano::network::server::confirm_ack {messageDict} {
 
 	set votedOn [llength $hashes]
 
-	::nano::node::stats::incr [list confirm_ack votedOnCount] $votedOn
-	::nano::node::stats::incr [list confirm_ack rep $voteAccount votedOnCount] $votedOn
+	::nano::node::stats::incr [list confirm_ack votedOn] $votedOn
+	::nano::node::stats::incr [list confirm_ack rep $voteAccount votedOn] $votedOn
 
 	foreach hash $hashes {
-		::nano::node::stats::lappend [list confirm_ack votedOnUniqueCount] $hash
-		::nano::node::stats::lappend [list confirm_ack rep $voteAccount votedOnUniqueCount] $hash
+		::nano::node::stats::lappend [list confirm_ack votedOnUnique] $hash
+		::nano::node::stats::lappend [list confirm_ack rep $voteAccount votedOnUnique] $hash
 	}
 
 	return ""
@@ -3483,15 +3486,18 @@ if {[catch {
 	catch {
 		set valid [::nano::internal::boolean [::nano::block::dict::verifySignature $block]]
 	}
+	if {$valid eq false && [dict get $block type] eq "state"} {
+		# Check if possibly epoch
+	}
 	set validWork [::nano::internal::boolean [::nano::block::dict::validateWork $block]]
 
-
+	::nano::node::stats::incr [list publish]
 	::nano::node::stats::incr [list publish valid $valid]
 	::nano::node::stats::incr [list publish validWork $validWork]
 	::nano::node::stats::incr [list publish type [dict get $block type]]
 	::nano::node::stats::lappend [list publish unique] $hash
 
-}]} { puts $::errorInfo }
+}]} { puts "ERROR: $::errorInfo" }
 
 	return ""
 }
@@ -3565,6 +3571,10 @@ proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
 	}
 
 	dict set messageDict socket $peerSock
+
+	# Stats
+	::nano::node::stats::incr [list datagram version $versionUsing]
+	::nano::node::stats::incr [list datagram network $network]
 
 	set retval [dict create]
 	if {[catch {
@@ -3735,8 +3745,22 @@ proc ::nano::node::stats::open {} {
 
 	package require sqlite3
 
-	sqlite3 $db "" -create true
+	::close [file tempfile dbFileName]
+	file delete $dbFileName
+
+	sqlite3 $db $dbFileName -create true
+
+	$db eval {PRAGMA journal_mode = OFF}
+
+	file delete $dbFileName
+
 	tailcall clear
+}
+
+proc ::nano::node::stats::close {} {
+	set db ::nano::node::stats::_db
+
+	$db close
 }
 
 proc ::nano::node::stats::clear {} {
