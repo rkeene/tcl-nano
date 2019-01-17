@@ -3,9 +3,15 @@ AC_INIT(tcl-nano, 1.3)
 
 dnl Checks for programs.
 AC_PROG_CC
+AC_PROG_CC_C99
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
 AC_GNU_SOURCE
+
+dnl Monocypher requires C99
+if test "$ac_cv_prog_cc_c99" = no; then
+	AC_ERROR([C99 compiler required])
+fi
 
 dnl Determine system information
 DC_CHK_OS_INFO
