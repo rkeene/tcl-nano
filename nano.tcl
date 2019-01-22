@@ -4056,13 +4056,13 @@ proc ::nano::balance::toHuman {raw {decimals 3}} {
 proc ::nano::wallet::decode_backup {password walletJSON} {
 	array set walletArray [::json::json2dict $walletJSON]
 
-	set wallet(version) [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000000)]
+	set wallet(version) [format %lli 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000000)]
 	set wallet(salt)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000001)]
 	set wallet(key)     [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000002)]
 	set wallet(check)   [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000003)]
 	set wallet(rep)     [::nano::address::fromPublicKey $walletArray(0000000000000000000000000000000000000000000000000000000000000004)]
 	set wallet(seed)    [binary decode hex $walletArray(0000000000000000000000000000000000000000000000000000000000000005)]
-	set wallet(index)   [expr 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000006)]
+	set wallet(index)   [format %lli 0x$walletArray(0000000000000000000000000000000000000000000000000000000000000006)]
 
 	if {$wallet(version) != 4} {
 		return -code error "Unsupported wallet backup version ($version)"
