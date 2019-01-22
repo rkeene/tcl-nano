@@ -639,15 +639,10 @@ static int nano_tcl_resolve_name(ClientData clientData, Tcl_Interp *interp, int 
 	}
 
 	gai_ret = getaddrinfo(hostname, NULL, NULL, &gai_data);
-	if (gai_ret == EAI_NODATA || gai_ret == EAI_NONAME) {
+	if (gai_ret != 0) {
 		Tcl_SetResult(interp, "", NULL);
 
 		return(TCL_OK);
-	}
-	if (gai_ret != 0) {
-		Tcl_SetResult(interp, (char *) gai_strerror(gai_ret), NULL);
-
-		return(TCL_ERROR);
 	}
 
 	list_of_hostnames = Tcl_NewObj();
