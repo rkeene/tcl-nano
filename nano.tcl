@@ -172,7 +172,7 @@ proc ::nano::address::toPublicKey {address args} {
 	if {$performChecksumCheck} {
 		set resultBinary [binary decode hex $result]
 		set checksumVerify [binary encode hex [string reverse [::nano::internal::hashData $resultBinary 5]]]
-		set checksumVerify [expr "0x$checksumVerify"]
+		set checksumVerify [format %lli "0x$checksumVerify"]
 
 		if {$checksum != $checksumVerify} {
 			return -code error "Invalid address (checksum)"
@@ -218,7 +218,7 @@ proc ::nano::address::fromPublicKey {publicKey args} {
 	append publicKey $checksum
 
 	set publicKey [binary encode hex $publicKey]
-	set publicKey [expr "0x$publicKey"]
+	set publicKey [format %lli "0x$publicKey"]
 	set alphabet [split $::nano::address::base32alphabet ""]
 	set address ""
 	for {set index 0} {$index < 60} {incr index} {
