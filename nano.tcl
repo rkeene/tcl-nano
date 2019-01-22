@@ -208,6 +208,10 @@ proc ::nano::address::fromPublicKey {publicKey args} {
 
 	if {[string length $publicKey] != $::nano::key::publicKeyLength} {
 		set publicKey [binary decode hex $publicKey]
+
+		if {[string length $publicKey] != $::nano::key::publicKeyLength} {
+			return -code error "Invalid public key (length: [string length $publicKey], expected $::nano::key::publicKeyLength)"
+		}
 	}
 
 	set checksum [string reverse [::nano::internal::hashData $publicKey 5]]
@@ -457,6 +461,13 @@ proc ::nano::block::dict::_addWorkData {blockDict} {
 			dict set blockDict "_workData" [dict get $blockDict "previous"]
 		} else {
 			dict set blockDict "_workData" [::nano::address::toPublicKey [dict get $blockDict "account"]]
+		}
+	}
+
+	if {[dict exists $blockDict "work"]} {
+		set valid [::nano::work::validate [dict get $blockDict "_workData"] [dict get $blockDict "work"]]
+		if {!$valid} {
+			return -code error "Invalid work when adding block"
 		}
 	}
 
@@ -3260,6 +3271,10 @@ proc ::nano::node::getPeers {} {
 	set now [clock seconds]
 	# Cleanup nonces while we are here
 	foreach {peerKey peerInfo} [array get ::nano::node::_node_id_nonces] {
+		if {![dict exists $peerInfo "lastSeen"]} {
+			continue
+		}
+
 		set lastSeen [dict get $peerInfo "lastSeen"]
 		if {($now - $lastSeen) > (5 * 60)} {
 			unset ::nano::node::_node_id_nonces($peerKey)
@@ -3268,6 +3283,10 @@ proc ::nano::node::getPeers {} {
 
 	# Come up with a list of peers that we have seen recently
 	foreach {peerKeyInfo peerInfo} [array get ::nano::node::peers] {
+		if {![dict exists $peerInfo "lastSeen"]} {
+			continue
+		}
+
 		set lastSeen [dict get $peerInfo "lastSeen"]
 		set address [dict get $peerKeyInfo "address"]
 		set peerPort [dict get $peerKeyInfo "port"]
@@ -3341,7 +3360,6 @@ proc ::nano::network::server::keepalive {messageDict} {
 				set ::nano::node::_node_id_nonces($peer) [dict create query $node_id_nonce lastSeen $now]
 
 				set peerSock [::nano::node::createSocket realtime $address $port]
-#puts "Querying $peerSock with node_id_handshake (1)"
 				::nano::network::client $peerSock "node_id_handshake" query -query $node_id_nonce
 			}
 		}
@@ -3374,6 +3392,14 @@ proc ::nano::protocol::parse::node_id_handshake {extensions messageData} {
 	return [array get result]
 }
 
+proc ::nano::network::_socketToPeer {realtimeSocket} {
+	set peerInfo [dict get $realtimeSocket remote]
+	set peerAddress [lindex $peerInfo 0]
+	set peerPort [lindex $peerInfo 1]
+	set peer [dict create address $peerAddress port $peerPort]
+	return $peer
+}
+
 proc ::nano::network::server::node_id_handshake {messageDict} {
 	set retval ""
 
@@ -3389,10 +3415,7 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 	}
 
 	if {"response" in [dict get $messageDict flags]} {
-		set peerInfo [dict get $messageDict socket remote]
-		set peerAddress [lindex $peerInfo 0]
-		set peerPort [lindex $peerInfo 1]
-		set peer [dict create address $peerAddress port $peerPort]
+		set peer [::nano::network::_socketToPeer [dict get $messageDict socket]]
 
 		# XXX:TODO: Verify the nonce
 		if {![info exists ::nano::node::_node_id_nonces($peer)]} {
@@ -3402,8 +3425,8 @@ proc ::nano::network::server::node_id_handshake {messageDict} {
 		unset ::nano::node::_node_id_nonces($peer)
 
 		# Add the peer to our list of peers
-#puts "Got node_id_handshake response from $peer"
-		set ::nano::node::peers($peer) [dict create lastSeen [clock seconds]]
+		dict set ::nano::node::peers($peer) lastSeen [clock seconds]
+		dict set ::nano::node::peers($peer) nodeIdKey [dict get $messageDict key]
 
 		# Stats
 		::nano::node::stats::incr [list node_id_handshake response]
@@ -3560,6 +3583,12 @@ proc ::nano::network::server {message {networkType "bootstrap"} {peerSock ""}} {
 	}
 
 	::nano::node::log "*** Incoming: $messageType ($messageTypeID on $networkType; from $peerSock) [binary encode hex $message] ($messageData)"
+
+	catch {
+		set peer [::nano::network::_socketToPeer $peerSock]
+		dict set ::nano::node::peers($peer) lastPacket [clock seconds]
+		dict set ::nano::node::peers($peer) lastVersion $versionUsing
+	}
 
 	if {![info exists messageDict]} {
 		return ""
@@ -4381,18 +4410,44 @@ proc {::nano::node::cli::show peers} args {
 			}
 		}
 
+		unset -nocomplain peerInfo
+		set fields [list]
 		if {[info exists ::nano::node::peers($peer)]} {
 			set peerInfo $::nano::node::peers($peer)
-			set lastSeen [dict get $peerInfo lastSeen]
+		}
 
+		catch {
+			set versionUsing [dict get $peerInfo lastVersion]
+
+			lappend fields "protocol $versionUsing"
+		}
+
+		catch {
+			set lastSeen [dict get $peerInfo lastSeen]
 			set delta [expr {$now - $lastSeen}]
 
 			set age "last seen $delta seconds ago"
-		} else {
-			set age "statically configured peer"
+			lappend fields $age
 		}
 
-		lappend response "  $peer: $age"
+		catch {
+			set lastPacket [dict get $peerInfo lastPacket]
+			set delta [expr {$now - $lastPacket}]
+
+			lappend fields "last packet $delta seconds ago"
+		}
+
+		catch {
+			set nodeID [dict get $peerInfo nodeIdKey]
+
+			lappend fields "node identifier $nodeID"
+		}
+
+		if {[llength $fields] == 0} {
+			lappend fields "statically configured peer"
+		}
+
+		lappend response "  $peer: [join $fields {, }]"
 	}
 	return [join $response "\n"]
 }
