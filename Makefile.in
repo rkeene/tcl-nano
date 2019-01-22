@@ -109,8 +109,8 @@ clean:
 	rm -f nano-amalgamation.c nano-amalgamation.o
 	rm -f @EXTENSION_TARGET@ nano.o nano.gcda nano.gcno
 	rm -f argon2.o monocypher.o aes.o randombytes.o
-	rm -f argon2.gcda monocypher.gcda aes.gcda randombytes.gcda
-	rm -f argon2.gcno monocypher.gcno aes.gcno randombytes.gcno
+	rm -f argon2.gcda monocypher.gcda aes.gcda randombytes.gcda nano-amalgamation.gcda
+	rm -f argon2.gcno monocypher.gcno aes.gcno randombytes.gcno nano-amalgamation.gcno
 	rm -f nano-coverage.info
 
 distclean: clean
