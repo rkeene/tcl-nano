@@ -56,7 +56,11 @@ AC_ARG_ENABLE([coverage], AS_HELP_STRING([--enable-coverage], [enable code cover
 dnl If we are building a debug release, enable debugging flags
 if test "$tcl_nano_debug" = 'true'; then
 	AC_DEFINE(TCLEXT_TCL_NANO_DEBUG, [1], [Enable debugging build])
-	AX_CHECK_COMPILE_FLAG([-mmpx -fcheck-pointer-bounds], [CFLAGS="$CFLAGS -mmpx -fcheck-pointer-bounds"])
+	AX_CHECK_COMPILE_FLAG([-mmpx -fcheck-pointer-bounds], [
+		AX_CHECK_LINK_FLAG([-mmpx -fcheck-pointer-bounds], [
+			CFLAGS="$CFLAGS -mmpx -fcheck-pointer-bounds"
+		])
+	])
 	AX_CHECK_COMPILE_FLAG([-g3], [CFLAGS="$CFLAGS -g3"])
 	AX_CHECK_COMPILE_FLAG([-ggdb3], [CFLAGS="$CFLAGS -ggdb3"])
 else
