@@ -72,7 +72,7 @@ function download() {
 
 function cleanup() {
 	if [ -n "${workdir}" -a -d "${workdir}" ]; then
-		rm -rf "${workdir}"
+		echo rm -rf "${workdir}"
 	fi
 }
 
@@ -93,6 +93,168 @@ gzip -dc "${kitcreator_tarball}" | (
 	shopt -s dotglob
 	mv */* .
 	rmdir kitcreator-[0-9]*
+
+	cat << \_EOF_ | patch -p0
+--- common/common.sh
++++ common/common.sh
+@@ -271,10 +271,14 @@
+ 
+ 	# Create pkgIndex files if needed
+ 	if [ -z "${tclpkg}" ]; then
+ 		tclpkg="${pkg}"
+ 	fi
++	echo "${tclpkg}" > "${installdir}/tcl-pkg-name"
++	if [ -n "${tclpkg_initfunc}" ]; then
++		echo "${tclpkg_initfunc}" > "${installdir}/tcl-init-func"
++	fi
+ 
+ 	if [ -z "${tclpkgversion}" ]; then
+ 		tclpkgversion="${version}"
+ 	fi
+ 
+
+--- kitcreator
++++ kitcreator
+@@ -32,11 +32,11 @@
+ 		echo "Please remember to run 'build/pre.sh' if you expect this build to work." >&2
+ 	fi
+ fi
+ 
+ # Define the list of all packages, for cleaning purposes
+-KITCREATOR_ALLPKGS="kitsh tcl tclvfs zlib tk itcl mk4tcl thread dbus tls tclx tcc4tcl tcllib udp yajltcl tdom tuapi"
++KITCREATOR_ALLPKGS="kitsh tcl tclvfs zlib tk itcl mk4tcl thread dbus tls tclx tcc4tcl tcllib udp yajltcl tdom tuapi tclcurl lmdb nano"
+ 
+ # Always rebuild kitsh
+ rm -f "kitsh/.success"
+ for pkg in ${KITCREATOR_ALLPKGS} ${KITCREATOR_PKGS}; do
+ 	if [ "${mode}" != "retry" -o ! -f "${pkg}/.success" ]; then
+
+--- kitsh/buildsrc/kitsh-0.0/aclocal.m4
++++ kitsh/buildsrc/kitsh-0.0/aclocal.m4
+@@ -304,10 +304,13 @@
+ 			if test -n "${projlibfilesnostub}"; then
+ 				for subproj in $subprojs; do
+ 					subprojucase="`echo ${subproj} | dd conv=ucase 2>/dev/null`"
+ 					subprojtcase="`echo ${subprojucase} | cut -c 1``echo ${subproj} | cut -c 2-`"
+ 					lib_init_func="${subprojtcase}_Init"
++					if test -f "${projdir}/inst/tcl-init-func"; then
++						lib_init_func="`cat "${projdir}/inst/tcl-init-func"`"
++					fi
+ 
+ 					echo "#define KIT_INCLUDES_${subprojucase}" >> kitInit-libs.h
+ 					echo "Tcl_AppInitProc ${lib_init_func};" >> kitInit-libs.h
+ 
+ 					libs_init_funcs="${libs_init_funcs} ${lib_init_func}"
+@@ -321,10 +324,13 @@
+ 
+ 	echo '' >> kitInit-libs.h
+ 	echo 'static void _Tclkit_GenericLib_Init(void) {' >> kitInit-libs.h
+ 	for lib_init_func in ${libs_init_funcs}; do
+ 		proj="`echo ${lib_init_func} | sed 's@_Init$$@@@' | dd conv=lcase 2>/dev/null`"
++		if test -f "${projdir}/inst/tcl-pkg-name"; then
++			proj="`cat "${projdir}/inst/tcl-pkg-name"`"
++		fi
+ 		echo "	Tcl_StaticPackage(0, \"${proj}\", ${lib_init_func}, NULL);" >> kitInit-libs.h
+ 	done
+ 	echo '	return;' >> kitInit-libs.h
+ 	echo '}' >> kitInit-libs.h
+ 
+
+--- lmdb/build.sh
++++ lmdb/build.sh
+@@ -1,7 +1,15 @@
+ #! /usr/bin/env bash
+ 
+ # BuildCompatible: KitCreator
+ 
+-version="0.3.6"
++version="0.4.0"
+ url="https://github.com/ray2501/tcl-lmdb/archive/${version}.tar.gz"
+-sha256='887f72e7c8bc569d74d3c9f151313eadeb19036b4bf8ebd68d7da45aa8a14da7'
++sha256='d19a19376da6716a1ed159a918e631030491f8b6a4ef9e72a4221481b24b2e40'
++
++function postinstall() {
++	local name
++
++	find "${installdir}" -type -f -name '*.a' | while IFS='' read -r name; do
++		echo '-lntdll' > "${name}.linkadd"
++	done
++}
+
+DELETED lmdb/patches/lmdb-0.3.6-1fixbytearray.diff
+Index: lmdb/patches/lmdb-0.3.6-1fixbytearray.diff
+==================================================================
+--- lmdb/patches/lmdb-0.3.6-1fixbytearray.diff
++++ lmdb/patches/lmdb-0.3.6-1fixbytearray.diff
+@@ -1,14 +0,0 @@
+-diff --no-dereference -uNr lmdb-0.3.6.orig/generic/tclmdb.c lmdb-0.3.6-1fixbytearray/generic/tclmdb.c
+---- lmdb-0.3.6.orig/generic/tclmdb.c	2017-11-23 11:47:39.000000000 -0600
+-+++ lmdb-0.3.6-1fixbytearray/generic/tclmdb.c	2018-06-03 12:12:08.650738083 -0500
+-@@ -259,8 +259,8 @@
+-       }
+- 
+-       pResultStr = Tcl_NewListObj(0, NULL);
+--      Tcl_ListObjAppendElement(interp, pResultStr, Tcl_NewStringObj(mkey.mv_data, mkey.mv_size));
+--      Tcl_ListObjAppendElement(interp, pResultStr, Tcl_NewStringObj(mdata.mv_data, mdata.mv_size));
+-+      Tcl_ListObjAppendElement(interp, pResultStr, Tcl_NewByteArrayObj(mkey.mv_data, mkey.mv_size));
+-+      Tcl_ListObjAppendElement(interp, pResultStr, Tcl_NewByteArrayObj(mdata.mv_data, mdata.mv_size));
+- 
+-       Tcl_SetObjResult(interp, pResultStr);
+- 
+
+--- tclcurl/build.sh
++++ tclcurl/build.sh
+@@ -0,0 +1,23 @@
++#! /usr/bin/env bash
++
++# BuildCompatible: KitCreator
++
++version='7.22.0'
++url="https://github.com/flightaware/tclcurl-fa/archive/1fd1b4178a083f4821d0c45723605824fbcdb017.tar.gz"
++sha256='5abad0f369205b8369819f3993a700bb452921bcab7f42056ef29a1adc3eb093'
++tclpkg='TclCurl'
++
++function postinstall() {
++	if [ "${pkg_configure_shared_build}" = '0' ]; then
++		(
++			eval "$(grep '^PKG_LIBS=' config.log)" || exit 1
++			find "${installdir}" -type f -name '*.a' | while IFS='' read -r filename; do
++				echo "${PKG_LIBS}" > "${filename}.linkadd"
++			done
++		) || return 1
++
++		cat << \_EOF_ | sed "s|@@VERSION@@|${version}|g"> "${installdir}/lib/TclCurl${version}/pkgIndex.tcl"
++package ifneeded TclCurl @@VERSION@@ [list load {} TclCurl]\n[list source [file join $dir tclcurl.tcl]]
++_EOF_
++	fi
++}
+
+--- udp/patches/tcludp-1.0.11-fixerrno.diff
++++ udp/patches/tcludp-1.0.11-fixerrno.diff
+@@ -0,0 +1,21 @@
++diff --no-dereference -uNr tcludp-1.0.11.orig/generic/udp_tcl.c tcludp-1.0.11-fixerrno/generic/udp_tcl.c
++--- tcludp-1.0.11.orig/generic/udp_tcl.c	2014-08-24 02:17:21.000000000 -0500
+++++ tcludp-1.0.11-fixerrno/generic/udp_tcl.c	2019-01-18 09:57:47.320471347 -0600
++@@ -31,6 +31,9 @@
++ #error "Neither sys/ioctl.h nor sys/filio.h found. We need ioctl()"
++ #endif
++ #endif /* WIN32 */
+++#if defined(HAVE_STRERROR)
+++#include <string.h>
+++#endif
++ 
++ #if HAVE_FCNTL_H
++ #  include <fcntl.h>
++@@ -1833,7 +1836,6 @@
++     Tcl_AppendUnicodeToObj(errObj, (LPWSTR)sMsg, len - 1);
++     LocalFree(sMsg);
++ #elif defined(HAVE_STRERROR)
++-    extern int errno;
++     errObj = Tcl_NewStringObj(prefix, -1);
++     Tcl_AppendStringsToObj(errObj, ": ", strerror(errno), NULL);
++ #endif
+
+_EOF_
 )
 
 # Copy the library into the build system
@@ -111,6 +273,8 @@ mkdir "${workdir}/nano/buildsrc"
 	cd "${workdir}/nano/buildsrc" || exit 1
 	./build/pre.sh || exit 1
 	./build/post.sh || exit 1
+
+	unset CC HOST_CC CC_FOR_BUILD CXX AR AS LD NM CFLAGS CPPFLAGS LDFLAGS CXXFLAGS
 	./configure || exit 1
 	make distclean || exit 1
 )
@@ -148,6 +312,10 @@ mkdir "${workdir}/app"
 mkdir "${workdir}/app/in"
 (
 	cp -rp app/* "${workdir}/app/in" || exit 1
+	if [ ! -d "${workdir}/app/in/lib" ]; then
+		mkdir "${workdir}/app/in/lib" || exit 1
+	fi
+	cp -rp ../../vendor/tcl-packages/* "${workdir}/app/in/lib/" || exit 1
 
 	cd "${workdir}/app" || exit 1
 	cat << \_EOF_ > "build.sh" || exit 1
@@ -158,16 +326,27 @@ _EOF_
 	chmod +x build.sh
 )
 
+# XXX:TODO:
+platform='linux-x86_64'
+args=()
+for arg in "$@"; do
+	case "${arg}" in
+		--tcl-platform=*)
+			platform="$(echo "${arg}" | cut -f 2- -d =)"
+			;;
+		*)
+			args+=("${arg}")
+			;;
+	esac
+done
+
 # Build the kit
 (
 	cd "${workdir}"
 
-	export KITCREATOR_PKGS='nano tcllib udp lmdb app'
-	./kitcreator "$@" --enable-kit-storage=cvfs
+	export KITCREATOR_PKGS='nano udp lmdb app'
+	./kitcreator "${args[@]}" --enable-kit-storage=cvfs
 )
-
-# XXX:TODO:
-platform='linux-x86_64'
 
 # Copy the kit out
 mv "${workdir}"/tclkit-* ./tcl-nano-"${platform}"
