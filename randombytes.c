@@ -80,7 +80,11 @@ static long getrandom_impl(void *buf, unsigned int buflen) {
 	HCRYPTPROV provider;
 	BOOL cac_ret, cgr_ret;
 
-	cac_ret = CryptAcquireContextA(&provider, NULL, NULL, PROV_RSA_FULL, CRYPT_SILENT);
+	cac_ret = CryptAcquireContextA(&provider, NULL, NULL, PROV_RSA_FULL, CRYPT_SILENT | CRYPT_VERIFYCONTEXT);
+	if (cac_ret == FALSE) {
+		cac_ret = CryptAcquireContextA(&provider, NULL, NULL, PROV_RSA_FULL, CRYPT_SILENT | CRYPT_VERIFYCONTEXT | CRYPT_NEWKEYSET);
+	}
+
 	if (cac_ret == FALSE) {
 		return(-1);
 	}
