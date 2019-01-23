@@ -2479,9 +2479,6 @@ proc ::nano::network::_localIP {version} {
 				http://ipv6.rkeene.org/whatismyip
 				http://ifconfig.co/
 			}
-			set urls {
-				http://api.ipify.org/
-			}
 
 			set localIPPrefix ""
 		}
