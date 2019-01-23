@@ -96,16 +96,16 @@ AC_DEFINE([_FORTIFY_SOURCE], [2], [Enable fortification])
 
 dnl Enable OpenMP, if available
 tcl_nano_openmp=''
-AX_CHECK_COMPILE_FLAG([-fopenmp], [
+AX_CHECK_LINK_FLAG([-fopenmp], [
 	tcl_nano_openmp='-fopenmp'
 ], [
-	AX_CHECK_COMPILE_FLAG([-xopenmp], [
+	AX_CHECK_LINK_FLAG([-xopenmp], [
 		tcl_nano_openmp='-xopenmp'
 	], [
-		AX_CHECK_COMPILE_FLAG([-openmp], [
+		AX_CHECK_LINK_FLAG([-openmp], [
 			tcl_nano_openmp='-openmp'
 		], [
-			AX_CHECK_COMPILE_FLAG([/openmp], [
+			AX_CHECK_LINK_FLAG([/openmp], [
 				tcl_nano_openmp='/openmp'
 			])
 		])
