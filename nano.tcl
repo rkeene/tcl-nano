@@ -2,6 +2,7 @@
 
 package require Tcl 8.6.4
 
+package require http 2
 package require json
 package require json::write
 
@@ -2452,6 +2453,8 @@ proc ::nano::network::_localIP {version} {
 		return $::nano::network::_localIP($version)
 	}
 
+	package require http 2
+
 	## XXX:TODO: Work out a better system for determining ones own IP
 	switch -exact -- $version {
 		v4 {
@@ -2462,12 +2465,31 @@ proc ::nano::network::_localIP {version} {
 			set url "http://ipv6.rkeene.org/whatismyip"
 			set localIPPrefix ""
 		}
+		default {
+			return -code error "version must be \"v4\" or \"v6\""
+		}
 	}
 
-	set localIP [exec curl -sS $url]
-	if {$localIP eq ""} {
-		return -code error "Unable to lookup local IP $version"
+	catch {
+		set token [http::geturl $url -timeout 30000]
+		set ncode [http::ncode $token]
+		set data [http::data $token]
+	} error
+
+	if {![info exists data]} {
+		set ncode -1
+		set data $error
 	}
+
+	if {[info exists token]} {
+		http::cleanup $token
+	}
+
+	if {$ncode ne "200"} {
+		return -code error "Unable to lookup local IP $version ($ncode: $data)"
+	}
+
+	set localIP $data
 
 	set localIP [string trim $localIP]
 	set localIP "${localIPPrefix}${localIP}"

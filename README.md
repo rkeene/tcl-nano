@@ -36,7 +36,6 @@ available without these packages):
    - The Tcl package [lmdb](https://github.com/ray2501/tcl-lmdb)
    - The Tcl package [udp](http://tcludp.sourceforge.net/)
    - The Tcl package [tclreadline](http://tclreadline.sourceforge.net/)
-   - The curl command
 
 On a Debian system you should be able to do the following (to use the package):
 
