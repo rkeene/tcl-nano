@@ -21,6 +21,7 @@ urls=(
 )
 
 localFiles=(
+	aclocal/xax_check_func_in_lib.m4
 )
 
 failed='0'

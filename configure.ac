@@ -106,34 +106,7 @@ AX_OPENMP([
 dnl Random number generation mechanisms
 AC_CHECK_FUNCS(getrandom,, [
 	AC_CHECK_FUNCS(getentropy,, [
-		AC_CACHE_CHECK([for CryptGenRandom], nanotcl_cv_func_CryptGenRandom, [
-			save_LIBS="${LIBS}"
-			LIBS="${save_LIBS} -ladvapi32"
-			AC_LINK_IFELSE([AC_LANG_PROGRAM([[
-#include <windows.h>
-#include <wincrypt.h>
-			]], [[
-				HCRYPTPROV provider;
-				BOOL ret;
-				ret = CryptGenRandom(provider, 0, NULL);
-				if (ret) {
-					return(0);
-				} else {
-					return(1);
-				}
-			]])], [
-				nanotcl_cv_func_CryptGenRandom='yes'
-			], [
-				nanotcl_cv_func_CryptGenRandom='no'
-			])
-			LIBS="${save_LIBS}"
-		])
-		if test "x$nanotcl_cv_func_CryptGenRandom" = 'xyes'; then
-			LIBS="${LIBS} -ladvapi32"
-			AC_DEFINE(HAVE_WINDOWS_H, [1], [Define if we have <windows.h>])
-			AC_DEFINE(HAVE_WINCRYPT_H, [1], [Define if we have <wincrypt.h>])
-			AC_DEFINE(HAVE_CRYPTGENRANDOM, [1], [Define if we have CryptGenRandom])
-		fi
+		XAX_CHECK_FUNC_IN_LIB(windows.h wincrypt.h, -ladvapi32, CryptGenRandom)
 	])
 ])
 
@@ -143,34 +116,9 @@ AC_CHECK_FUNCS(getaddrinfo, [
 		AC_CHECK_HEADERS(sys/types.h sys/socket.h netdb.h)
 	])
 ], [
-	AC_CACHE_CHECK([for getaddrinfo on Windows], nanotcl_cv_func_getaddrinfo, [
-		save_LIBS="${LIBS}"
-		LIBS="${save_LIBS} -lws2_32"
-		AC_LINK_IFELSE([AC_LANG_PROGRAM([[
-#include <ws2tcpip.h>
-#include <windows.h>
-		]], [[
-			int gai_ret;
-			gai_ret = getaddrinfo(NULL, NULL, NULL, NULL);
-			if (gai_ret == 0) {
-				return(1);
-			} else {
-				return(0);
-			}
-		]])], [
-			nanotcl_cv_func_getaddrinfo='yes'
-		], [
-			nanotcl_cv_func_getaddrinfo='no'
-		])
-		LIBS="${save_LIBS}"
+	XAX_CHECK_FUNC_IN_LIB(ws2tcpip.h windows.h, -lws2_32, getaddrinfo, [
+		XAX_CHECK_FUNC_IN_LIB(ws2tcpip.h windows.h, -lws2_32, getnameinfo)
 	])
-	if test "x$nanotcl_cv_func_getaddrinfo" = 'xyes'; then
-		LIBS="${LIBS} -lws2_32"
-		AC_DEFINE(HAVE_GETADDRINFO, [1], [Define if we have getaddrinfo])
-		AC_DEFINE(HAVE_GETNAMEINFO, [1], [Define if we have getnameinfo])
-		AC_DEFINE(HAVE_WINDOWS_H, [1], [Define if we have <windows.h>])
-		AC_DEFINE(HAVE_WS2TCPIP_H, [1], [Define if we have <ws2tcpip.h>])
-	fi
 ])
 
 dnl Handle specifying where TCLLIB is, for testing
