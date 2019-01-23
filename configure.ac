@@ -97,24 +97,11 @@ AX_CHECK_COMPILE_FLAG([-fno-strict-overflow], [CFLAGS="$CFLAGS -fno-strict-overf
 AC_DEFINE([_FORTIFY_SOURCE], [2], [Enable fortification])
 
 dnl Enable OpenMP, if available
-tcl_nano_openmp=''
-AX_CHECK_LINK_FLAG([-fopenmp], [
-	tcl_nano_openmp='-fopenmp'
-], [
-	AX_CHECK_LINK_FLAG([-xopenmp], [
-		tcl_nano_openmp='-xopenmp'
-	], [
-		AX_CHECK_LINK_FLAG([/openmp], [
-			tcl_nano_openmp='/openmp'
-		])
-	])
-])
-
-if test -n "${tcl_nano_openmp}"; then
-	CFLAGS="$CFLAGS ${tcl_nano_openmp}"
+AX_OPENMP([
+	CFLAGS="$CFLAGS $OPENMP_CFLAGS"
 
 	AC_DEFINE([NANO_TCL_HAVE_OPENMP], [1], [Define if you have support for OpenMP])
-fi
+])
 
 dnl Random number generation mechanisms
 AC_CHECK_FUNCS(getrandom,, [
