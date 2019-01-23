@@ -3721,7 +3721,8 @@ proc ::nano::node::createSocket {type address port} {
 			return
 		}
 
-		set protocolVersion "v[::ip::version $address]"
+		set addressVersion [::ip::version $address]
+		set protocolVersion "v$addressVersion"
 		set socket $::nano::node::realtime::socket($protocolVersion)
 		set peerSock [list type "realtime" remote [list $address $port] socket $socket]
 	} elseif {$type eq "bootstrap"} {
@@ -3742,7 +3743,14 @@ proc ::nano::node::realtime::incoming {socket} {
 	set remote [chan configure $socket -peer]
 	set address [lindex $remote 0]
 	set port [lindex $remote 1]
-	set peerSock [::nano::node::createSocket realtime $address $port]
+	catch {
+		set peerSock [::nano::node::createSocket realtime $address $port]
+	}
+	if {![info exists peerSock]} {
+		::nano::node::log "Error: Unable to create socket from address \"$address\" port \"$port\""
+		return
+	}
+
 	set response [::nano::network::server $data "realtime" $peerSock]
 	if {$response eq ""} {
 		return
