@@ -102,12 +102,8 @@ AX_CHECK_LINK_FLAG([-fopenmp], [
 	AX_CHECK_LINK_FLAG([-xopenmp], [
 		tcl_nano_openmp='-xopenmp'
 	], [
-		AX_CHECK_LINK_FLAG([-openmp], [
-			tcl_nano_openmp='-openmp'
-		], [
-			AX_CHECK_LINK_FLAG([/openmp], [
-				tcl_nano_openmp='/openmp'
-			])
+		AX_CHECK_LINK_FLAG([/openmp], [
+			tcl_nano_openmp='/openmp'
 		])
 	])
 ])
