@@ -3741,7 +3741,7 @@ proc ::nano::node::realtime::incoming {socket} {
 	}
 
 	set remote [chan configure $socket -peer]
-	set address [lindex $remote 0]
+	set address [string trim [lindex $remote 0] "\[\]"]
 	set port [lindex $remote 1]
 	catch {
 		set peerSock [::nano::node::createSocket realtime $address $port]
