@@ -2,7 +2,6 @@
 
 package require Tcl 8.6.4
 
-package require http 2
 package require json
 package require json::write
 
