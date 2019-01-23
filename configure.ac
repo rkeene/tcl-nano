@@ -28,6 +28,8 @@ if test "$TCLEXT_BUILD" != 'static'; then
 
 	EXTENSION_TARGET="nano.${SHOBJEXT}"
 else
+	dnl Hard-code the archive extension to be .a
+	AREXT='a'
 	AC_CHECK_TOOL([AR], [ar], [false])
 	AC_CHECK_TOOL([RANLIB], [ranlib], [:])
 
