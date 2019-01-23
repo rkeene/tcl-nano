@@ -3838,14 +3838,9 @@ proc ::nano::node::stats::open {} {
 
 	package require sqlite3
 
-	::close [file tempfile dbFileName]
-	file delete $dbFileName
-
-	sqlite3 $db $dbFileName -create true
+	sqlite3 $db ""
 
 	$db eval {PRAGMA journal_mode = OFF}
-
-	file delete $dbFileName
 
 	tailcall clear
 }
