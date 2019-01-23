@@ -2448,20 +2448,41 @@ proc ::nano::protocol::create::node_id_handshake {types args} {
 }
 
 proc ::nano::network::_localIP {version} {
+	set now [clock seconds]
+
 	if {[info exists ::nano::network::_localIP($version)]} {
-		return $::nano::network::_localIP($version)
+		set cached $::nano::network::_localIP($version)
+		set lastCheckTime [dict get $cached lastCheckTime]
+		if {($lastCheckTime + 300) >= $now} {
+			if {[dict exists $cached value]} {
+				return [dict get $cached value]
+			} else {
+				return -code error "Unable to resolve address for IP $version (cached)"
+			}
+		}
 	}
 
 	package require http 2
 
-	## XXX:TODO: Work out a better system for determining ones own IP
 	switch -exact -- $version {
 		v4 {
-			set url "http://ipv4.rkeene.org/whatismyip"
+			set urls {
+				http://api.ipify.org/
+				http://ipv4.rkeene.org/whatismyip
+				http://ifconfig.co/
+			}
+
 			set localIPPrefix "::ffff:"
 		}
 		v6 {
-			set url "http://ipv6.rkeene.org/whatismyip"
+			set urls {
+				http://ipv6.rkeene.org/whatismyip
+				http://ifconfig.co/
+			}
+			set urls {
+				http://api.ipify.org/
+			}
+
 			set localIPPrefix ""
 		}
 		default {
@@ -2469,33 +2490,58 @@ proc ::nano::network::_localIP {version} {
 		}
 	}
 
-	catch {
-		set token [http::geturl $url -timeout 30000]
-		set ncode [http::ncode $token]
-		set data [http::data $token]
-	} error
+	# Cache an error in advance
+	set ::nano::network::_localIP($version) [dict create lastCheckTime $now]
 
-	if {![info exists data]} {
-		set ncode -1
-		set data $error
+	foreach url $urls {
+		set oldAgent [http::config -useragent]
+		http::config -useragent "curl/0.0"
+		catch {
+			set token [http::geturl $url -timeout 30000]
+			set ncode [http::ncode $token]
+			set data [http::data $token]
+		} error
+		http::config -useragent $oldAgent
+
+		if {![info exists data]} {
+			set ncode -1
+			set data $error
+		}
+
+		if {[info exists token]} {
+			http::cleanup $token
+		}
+
+		if {$ncode ne "200"} {
+			continue
+		}
+
+		set localIP $data
+		set localIP [string trim $localIP]
+		set localIPVersion ""
+		catch {
+			set localIPVersion "v[::ip::version $localIP]"
+		}
+
+		if {$localIPVersion != $version} {
+			unset localIP
+
+			continue
+		}
+
+		break
 	}
 
-	if {[info exists token]} {
-		http::cleanup $token
+	if {![info exists localIP]} {
+		return -code error "Unable to lookup local IP $version"
 	}
 
-	if {$ncode ne "200"} {
-		return -code error "Unable to lookup local IP $version ($ncode: $data)"
-	}
-
-	set localIP $data
-
-	set localIP [string trim $localIP]
 	set localIP "${localIPPrefix}${localIP}"
 
-	set ::nano::network::_localIP($version) $localIP
+	# Cache the returned value
+	set ::nano::network::_localIP($version) [dict create lastCheckTime $now value $localIP]
 
-	return $::nano::network::_localIP($version)
+	return $localIP
 }
 
 proc ::nano::protocol::create::keepalive {ipPortDictList args} {
