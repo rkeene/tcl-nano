@@ -1,6 +1,13 @@
 /* XXX:TODO: OpenMP support is currently incomplete */
 #undef NANO_TCL_HAVE_OPENMP
 
+#ifdef HAVE_WS2TCPIP_H
+#  include <ws2tcpip.h>
+#endif
+#ifdef HAVE_WINDOWS_H
+#  include <windows.h>
+#endif
+
 #include <stdint.h>
 #include <limits.h>
 #include <string.h>
