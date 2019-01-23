@@ -3,7 +3,7 @@
 
 #include "randombytes.h"
 
-long getrandom_impl(void *buf, unsigned int buflen);
+static long getrandom_impl(void *buf, unsigned int buflen);
 void randombytes(unsigned char *buffer, unsigned long long length) {
 	long gr_ret;
 	int errorCount = 0;
@@ -48,7 +48,7 @@ void randombytes(unsigned char *buffer, unsigned long long length) {
 #    include <sys/random.h>
 #  endif
 
-long getrandom_impl(void *buf, unsigned int buflen) {
+static long getrandom_impl(void *buf, unsigned int buflen) {
 	ssize_t gr_ret;
 
 	gr_ret = getrandom(buf, buflen, 0);
@@ -59,7 +59,7 @@ long getrandom_impl(void *buf, unsigned int buflen) {
 #elif defined(HAVE_GETENTROPY)
 #include <unistd.h>
 
-long getrandom_impl(void *buf, unsigned int buflen) {
+static long getrandom_impl(void *buf, unsigned int buflen) {
 	int ge_ret;
 
 	if (buflen > 255) {
@@ -75,7 +75,7 @@ long getrandom_impl(void *buf, unsigned int buflen) {
 }
 #elif defined(HAVE_CRYPTGENRANDOM) && 0
 #include <tcl.h>
-long getrandom_impl(void *buf, unsigned int buflen) {
+static long getrandom_impl(void *buf, unsigned int buflen) {
 	Tcl_Panic("Incomplete CryptGenRandom");
 }
 #else
@@ -91,7 +91,7 @@ long getrandom_impl(void *buf, unsigned int buflen) {
 # ifdef HAVE_UNISTD_H
 #    include <unistd.h>
 # endif
-long getrandom_impl(void *buf, unsigned int buflen) {
+static long getrandom_impl(void *buf, unsigned int buflen) {
 	ssize_t read_ret;
 	long retval;
 	int fd = -1;
