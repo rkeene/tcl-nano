@@ -73,10 +73,27 @@ static long getrandom_impl(void *buf, unsigned int buflen) {
 
 	return(buflen);
 }
-#elif defined(HAVE_CRYPTGENRANDOM) && 0
-#include <tcl.h>
+#elif defined(HAVE_CRYPTGENRANDOM)
+#  include <windows.h>
+#  include <wincrypt.h>
 static long getrandom_impl(void *buf, unsigned int buflen) {
-	Tcl_Panic("Incomplete CryptGenRandom");
+	HCRYPTPROV provider;
+	BOOL cac_ret, cgr_ret;
+
+	cac_ret = CryptAcquireContextA(&provider, NULL, NULL, PROV_RSA_FULL, CRYPT_SILENT);
+	if (cac_ret == FALSE) {
+		return(-1);
+	}
+
+	cgr_ret = CryptGenRandom(provider, buflen, (BYTE *) buf);
+
+	CryptReleaseContext(provider, 0);
+
+	if (cgr_ret == FALSE) {
+		return(-1);
+	}
+
+	return(buflen);
 }
 #else
 #  ifdef HAVE_SYS_TYPES_H

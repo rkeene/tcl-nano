@@ -121,7 +121,32 @@ fi
 dnl Random number generation mechanisms
 AC_CHECK_FUNCS(getrandom,, [
 	AC_CHECK_FUNCS(getentropy,, [
-		AC_CHECK_FUNCS(CryptGenRandom)
+		AC_CACHE_CHECK([for CryptGenRandom], nanotcl_cv_func_CryptGenRandom, [
+			save_LIBS="${LIBS}"
+			LIBS="${save_LIBS} -ladvapi32"
+			AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#include <windows.h>
+#include <wincrypt.h>
+			]], [[
+				HCRYPTPROV provider;
+				BOOL ret;
+				ret = CryptGenRandom(provider, 0, NULL);
+				if (ret) {
+					return(0);
+				} else {
+					return(1);
+				}
+			]])], [
+				nanotcl_cv_func_CryptGenRandom='yes'
+			], [
+				nanotcl_cv_func_CryptGenRandom='no'
+			])
+			LIBS="${save_LIBS}"
+		])
+		if test "x$nanotcl_cv_func_CryptGenRandom" = 'xyes'; then
+			LIBS="${LIBS} -ladvapi32"
+			AC_DEFINE(HAVE_CRYPTGENRANDOM, [1], [Define if we have CryptGenRandom])
+		fi
 	])
 ])
 
