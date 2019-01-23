@@ -2453,7 +2453,7 @@ proc ::nano::network::_localIP {version} {
 	if {[info exists ::nano::network::_localIP($version)]} {
 		set cached $::nano::network::_localIP($version)
 		set lastCheckTime [dict get $cached lastCheckTime]
-		if {($lastCheckTime + 300) >= $now} {
+		if {[clock add $lastCheckTime 1 day] >= $now} {
 			if {[dict exists $cached value]} {
 				return [dict get $cached value]
 			} else {
